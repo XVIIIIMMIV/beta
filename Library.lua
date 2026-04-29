@@ -292,6 +292,7 @@ local Templates = {
         DisabledValues = {},
         Multi = false,
         MaxVisibleDropdownItems = 5,
+        CenterLabel = false,
 
         Callback = function() end,
         Changed = function() end,
@@ -4645,6 +4646,7 @@ do
             DisabledValues = Info.DisabledValues,
             Multi = Info.Multi,
             PendingValue = nil,
+            CenterLabel = Info.CenterLabel,
 
             SpecialType = Info.SpecialType,
             ExcludeLocalPlayer = Info.ExcludeLocalPlayer,
@@ -4676,7 +4678,7 @@ do
             Size = UDim2.new(1, 0, 0, 14),
             Text = Dropdown.Text,
             TextSize = 14,
-            TextXAlignment = Enum.TextXAlignment.Left,
+            TextXAlignment = Dropdown.CenterLabel and Enum.TextXAlignment.Center or Enum.TextXAlignment.Left,
             Visible = not not Info.Text,
             ZIndex = 3,
             Parent = Holder,
