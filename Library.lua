@@ -291,7 +291,7 @@ local Templates = {
         Values = {},
         DisabledValues = {},
         Multi = false,
-        MaxVisibleDropdownItems = 8,
+        MaxVisibleDropdownItems = 5,
 
         Callback = function() end,
         Changed = function() end,
