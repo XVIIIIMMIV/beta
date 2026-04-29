@@ -220,7 +220,7 @@ local Templates = {
         UnlockMouseWhileOpen = true,
         Icon = "rbxassetid://86720583626882",
 
-        EnableSidebarResize = true,
+        EnableSidebarResize = false,
         EnableCompacting = true,
         DisableCompactingSnap = false,
         SidebarCompacted = true,
@@ -4498,26 +4498,32 @@ do
 
             local Tab = Library.ActiveTab
             local DragChanged = false
+            local function ApplyMouseValue()
+                local OldValue = Slider.Value
+                local Location = Mouse.X
+                local Scale = math.clamp((Location - Bar.AbsolutePosition.X) / Bar.AbsoluteSize.X, 0, 1)
+
+                local RawValue = Slider.Min + ((Slider.Max - Slider.Min) * Scale)
+                if Slider.Increment and Slider.Increment > 0 then
+                    RawValue = math.round((RawValue - Slider.Min) / Slider.Increment) * Slider.Increment + Slider.Min
+                    RawValue = math.clamp(RawValue, Slider.Min, Slider.Max)
+                end
+
+                Slider:SetValue(RawValue)
+                if Slider.Value ~= OldValue then
+                    DragChanged = true
+                end
+            end
             if Tab and Tab.Sides then
                 for _, Side in Tab.Sides do
                     Side.ScrollingEnabled = false
                 end
             end
 
-            while IsDragInput(Input) do
-                local Location = Mouse.X
-                local Scale = math.clamp((Location - Bar.AbsolutePosition.X) / Bar.AbsoluteSize.X, 0, 1)
+            ApplyMouseValue()
 
-                local OldValue = Slider.Value
-                local RawValue = Slider.Min + ((Slider.Max - Slider.Min) * Scale)
-                if Slider.Increment and Slider.Increment > 0 then
-                    RawValue = math.round((RawValue - Slider.Min) / Slider.Increment) * Slider.Increment + Slider.Min
-                    RawValue = math.clamp(RawValue, Slider.Min, Slider.Max)
-                end
-                Slider:SetValue(RawValue)
-                if Slider.Value ~= OldValue then
-                    DragChanged = true
-                end
+            while IsDragInput(Input) do
+                ApplyMouseValue()
 
                 RunService.RenderStepped:Wait()
             end
