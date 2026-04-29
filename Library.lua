@@ -1624,6 +1624,73 @@ function Library:GetTextBounds(Text: string, Font: Font, Size: number, Width: nu
     return Bounds.X, Bounds.Y
 end
 
+function Library:ResolveSelectionMap(selection, displayMap)
+    if type(selection) ~= "table" then
+        return {}
+    end
+
+    local resolved = {}
+    local map = type(displayMap) == "table" and displayMap or {}
+
+    local function resolveOne(entry)
+        if type(entry) ~= "string" then
+            return entry
+        end
+
+        local mapped = map[entry]
+        if mapped then
+            return mapped
+        end
+
+        local stripped = entry:match("^(.-)%s*%[[^%]]+%]$")
+        if stripped and stripped ~= "" then
+            return map[stripped] or stripped
+        end
+
+        return entry
+    end
+
+    for key, value in pairs(selection) do
+        if type(key) == "number" and type(value) == "string" then
+            resolved[resolveOne(value)] = true
+        elseif value == true then
+            resolved[resolveOne(key)] = true
+        elseif type(key) == "string" then
+            resolved[resolveOne(key)] = value
+        end
+    end
+
+    return resolved
+end
+
+function Library:HasAnyEnabledSelection(selection)
+    if type(selection) ~= "table" then
+        return false
+    end
+
+    for _, enabled in pairs(selection) do
+        if enabled then
+            return true
+        end
+    end
+
+    return false
+end
+
+function Library:RefreshElementLayout(Groupbox, Holder, Visible)
+    if Holder and Visible ~= nil then
+        Holder.Visible = Visible
+    end
+    if Groupbox and Groupbox.Resize then
+        Groupbox:Resize()
+        task.defer(function()
+            if Groupbox and Groupbox.Resize then
+                Groupbox:Resize()
+            end
+        end)
+    end
+end
+
 function Library:MouseIsOverFrame(Frame: GuiObject, Mouse: Vector2): boolean
     local AbsPos, AbsSize = Frame.AbsolutePosition, Frame.AbsoluteSize
     return Mouse.X >= AbsPos.X
@@ -4043,10 +4110,6 @@ do
     end
 
     function Funcs:AddInput(Idx, Info)
-        if typeof(Info) == "table" and (typeof(Info.VerifyValue) == "function" and Info.Finished ~= true) then
-            Info.Finished = true
-        end
-
         Info = Library:Validate(Info, Templates.Input)
 
         local Groupbox = self
@@ -4079,11 +4142,9 @@ do
             Type = "Input",
         }
 
-        local HasLabel = type(Input.Text) == "string" and Input.Text ~= ""
-
         local Holder = New("Frame", {
             BackgroundTransparency = 1,
-            Size = UDim2.new(1, 0, 0, HasLabel and 39 or 21),
+            Size = UDim2.new(1, 0, 0, 39),
             Visible = Input.Visible,
             Parent = Container,
         })
@@ -4094,16 +4155,15 @@ do
             Text = Input.Text,
             TextSize = 14,
             TextXAlignment = Enum.TextXAlignment.Left,
-            Visible = HasLabel,
             Parent = Holder,
         })
 
         local Box = New("TextBox", {
-            AnchorPoint = HasLabel and Vector2.new(0, 1) or Vector2.new(0, 0),
+            AnchorPoint = Vector2.new(0, 1),
             BackgroundColor3 = "MainColor",
             ClearTextOnFocus = not Input.Disabled and Input.ClearTextOnFocus,
             PlaceholderText = Input.Placeholder,
-            Position = HasLabel and UDim2.fromScale(0, 1) or UDim2.fromOffset(0, 0),
+            Position = UDim2.fromScale(0, 1),
             Size = UDim2.new(1, 0, 0, 21),
             Text = Input.Value,
             TextEditable = not Input.Disabled,
@@ -4140,6 +4200,15 @@ do
 
             Label.TextTransparency = Input.Disabled and 0.8 or 0
             Box.TextTransparency = Input.Disabled and 0.8 or 0
+        end
+
+        function Input:RefreshLayout()
+            local hasLabel = type(Input.Text) == "string" and Input.Text ~= ""
+            Holder.Size = UDim2.new(1, 0, 0, hasLabel and 39 or 21)
+            Label.Visible = hasLabel
+            Box.AnchorPoint = hasLabel and Vector2.new(0, 1) or Vector2.new(0, 0)
+            Box.Position = hasLabel and UDim2.fromScale(0, 1) or UDim2.fromOffset(0, 0)
+            Library:RefreshElementLayout(Groupbox)
         end
 
         function Input:OnChanged(Func)
@@ -4190,15 +4259,13 @@ do
 
         function Input:SetVisible(Visible: boolean)
             Input.Visible = Visible
-
-            Holder.Visible = Input.Visible
-            Groupbox:Resize()
-            task.defer(function() Groupbox:Resize() end)
+            Library:RefreshElementLayout(Groupbox, Holder, Input.Visible)
         end
 
         function Input:SetText(Text: string)
             Input.Text = Text
             Label.Text = Text
+            Input:RefreshLayout()
         end
 
         if Input.Finished then
@@ -4227,6 +4294,7 @@ do
         end
 
         Groupbox:Resize()
+        Input:RefreshLayout()
 
         Input.Holder = Holder
         table.insert(Groupbox.Elements, Input)
@@ -4466,10 +4534,7 @@ do
 
         function Slider:SetVisible(Visible: boolean)
             Slider.Visible = Visible
-
-            Holder.Visible = Slider.Visible
-            Groupbox:Resize()
-            task.defer(function() Groupbox:Resize() end)
+            Library:RefreshElementLayout(Groupbox, Holder, Slider.Visible)
         end
 
         function Slider:SetText(Text: string)
