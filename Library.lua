@@ -294,6 +294,7 @@ local Templates = {
         MaxVisibleDropdownItems = 5,
         CenterLabel = false,
         CenterDisplay = false,
+        CenterOptions = false,
 
         Callback = function() end,
         Changed = function() end,
@@ -4649,6 +4650,7 @@ do
             PendingValue = nil,
             CenterLabel = Info.CenterLabel,
             CenterDisplay = Info.CenterDisplay,
+            CenterOptions = Info.CenterOptions,
 
             SpecialType = Info.SpecialType,
             ExcludeLocalPlayer = Info.ExcludeLocalPlayer,
@@ -4685,6 +4687,7 @@ do
             ZIndex = 3,
             Parent = Holder,
         })
+        Label.TextXAlignment = Dropdown.CenterLabel and Enum.TextXAlignment.Center or Enum.TextXAlignment.Left
 
         local Display = New("TextButton", {
             Active = not Dropdown.Disabled,
@@ -4878,7 +4881,7 @@ do
                     Text = FormattedValue,
                     TextSize = 14,
                     TextTransparency = 0.5,
-                    TextXAlignment = Enum.TextXAlignment.Left,
+                    TextXAlignment = Dropdown.CenterOptions and Enum.TextXAlignment.Center or Enum.TextXAlignment.Left,
                     Parent = MenuTable.Menu,
                 })
                 New("UIPadding", {
@@ -5076,6 +5079,7 @@ do
 
             Label.Text = Text and Text or ""
             Label.Visible = not not Text
+            Label.TextXAlignment = Dropdown.CenterLabel and Enum.TextXAlignment.Center or Enum.TextXAlignment.Left
         end
 
         Display.MouseButton1Click:Connect(function()
