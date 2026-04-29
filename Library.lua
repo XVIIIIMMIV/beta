@@ -3626,6 +3626,7 @@ do
 
             Callback = Info.Callback,
             Changed = Info.Changed,
+            Released = Info.Released,
 
             Risky = Info.Risky,
             Disabled = Info.Disabled,
@@ -4078,9 +4079,11 @@ do
             Type = "Input",
         }
 
+        local HasLabel = type(Input.Text) == "string" and Input.Text ~= ""
+
         local Holder = New("Frame", {
             BackgroundTransparency = 1,
-            Size = UDim2.new(1, 0, 0, 39),
+            Size = UDim2.new(1, 0, 0, HasLabel and 39 or 21),
             Visible = Input.Visible,
             Parent = Container,
         })
@@ -4091,15 +4094,16 @@ do
             Text = Input.Text,
             TextSize = 14,
             TextXAlignment = Enum.TextXAlignment.Left,
+            Visible = HasLabel,
             Parent = Holder,
         })
 
         local Box = New("TextBox", {
-            AnchorPoint = Vector2.new(0, 1),
+            AnchorPoint = HasLabel and Vector2.new(0, 1) or Vector2.new(0, 0),
             BackgroundColor3 = "MainColor",
             ClearTextOnFocus = not Input.Disabled and Input.ClearTextOnFocus,
             PlaceholderText = Input.Placeholder,
-            Position = UDim2.fromScale(0, 1),
+            Position = HasLabel and UDim2.fromScale(0, 1) or UDim2.fromOffset(0, 0),
             Size = UDim2.new(1, 0, 0, 21),
             Text = Input.Value,
             TextEditable = not Input.Disabled,
@@ -4400,6 +4404,10 @@ do
             Slider.Changed = Func
         end
 
+        function Slider:OnReleased(Func)
+            Slider.Released = Func
+        end
+
         function Slider:SetMax(Value)
             assert(Value > Slider.Min, "Max value cannot be less than the current min value.")
 
@@ -4489,6 +4497,7 @@ do
             end
 
             local Tab = Library.ActiveTab
+            local DragChanged = false
             if Tab and Tab.Sides then
                 for _, Side in Tab.Sides do
                     Side.ScrollingEnabled = false
@@ -4506,6 +4515,9 @@ do
                     RawValue = math.clamp(RawValue, Slider.Min, Slider.Max)
                 end
                 Slider:SetValue(RawValue)
+                if Slider.Value ~= OldValue then
+                    DragChanged = true
+                end
 
                 RunService.RenderStepped:Wait()
             end
@@ -4514,6 +4526,10 @@ do
                 for _, Side in Tab.Sides do
                     Side.ScrollingEnabled = true
                 end
+            end
+
+            if DragChanged then
+                Library:SafeCallback(Slider.Released, Slider.Value)
             end
         end)
 
