@@ -51,6 +51,8 @@ local Library = {
     TabButtons = {},
     DependencyBoxes = {},
     ContextMenus = {},
+    ActiveWindow = nil,
+    Windows = {},
 
     KeybindFrame = nil,
     KeybindContainer = nil,
@@ -73,6 +75,12 @@ local Library = {
     Buttons = Buttons,
     Toggles = Toggles,
     Options = Options,
+    Registries = {
+        Labels = Labels,
+        Buttons = Buttons,
+        Toggles = Toggles,
+        Options = Options,
+    },
 
     NotifySide = "Right",
     ShowCustomCursor = true,
@@ -861,23 +869,39 @@ local function ResetTab(Tab)
 end
 
 function Library:UpdateSearch(SearchText)
-    Library.Searching = false
-    Library.SearchText = SearchText
+    local Window = Library.ActiveWindow
+    if Window and type(Window.UpdateSearch) == "function" then
+        return Window:UpdateSearch(SearchText)
+    end
+end
+
+local function UpdateWindowSearchState(Window, SearchText)
+    Window.Searching = false
+    Window.SearchText = SearchText
+
+    Library.Searching = Window.Searching
+    Library.SearchText = Window.SearchText
+    Library.LastSearchTab = Window.LastSearchTab
+    if Window.ActiveTab then
+        Library.ActiveTab = Window.ActiveTab
+    end
 
     local TabsToReset = {}
 
-    if Library.GlobalSearch then
-        for _, Tab in Library.Tabs do
+    if Window.GlobalSearch then
+        for _, Tab in Window.Tabs do
             if typeof(Tab) == "table" and not Tab.IsKeyTab then
                 table.insert(TabsToReset, Tab)
             end
         end
-    elseif Library.LastSearchTab and typeof(Library.LastSearchTab) == "table" then
-        table.insert(TabsToReset, Library.LastSearchTab)
+    elseif Window.LastSearchTab and typeof(Window.LastSearchTab) == "table" then
+        table.insert(TabsToReset, Window.LastSearchTab)
     end
 
     local Search = SearchText:lower()
     if Trim(Search) == "" then
+        Window.Searching = false
+        Window.LastSearchTab = nil
         Library.Searching = false
         Library.LastSearchTab = nil
 
@@ -891,27 +915,30 @@ function Library:UpdateSearch(SearchText)
     for _, Tab in ipairs(TabsToReset) do
         ResetTab(Tab)
     end
-    if not Library.GlobalSearch and Library.ActiveTab and Library.ActiveTab.IsKeyTab then
+    if not Window.GlobalSearch and Window.ActiveTab and Window.ActiveTab.IsKeyTab then
+        Window.Searching = false
+        Window.LastSearchTab = nil
         Library.Searching = false
         Library.LastSearchTab = nil
         return
     end
 
+    Window.Searching = true
     Library.Searching = true
 
     local TabsToSearch = {}
 
-    if Library.GlobalSearch then
+    if Window.GlobalSearch then
         TabsToSearch = TabsToReset
         if #TabsToSearch == 0 then
-            for _, Tab in Library.Tabs do
+            for _, Tab in Window.Tabs do
                 if typeof(Tab) == "table" and not Tab.IsKeyTab then
                     table.insert(TabsToSearch, Tab)
                 end
             end
         end
-    elseif Library.ActiveTab then
-        table.insert(TabsToSearch, Library.ActiveTab)
+    elseif Window.ActiveTab then
+        table.insert(TabsToSearch, Window.ActiveTab)
     end
 
     local FirstVisibleTab = nil
@@ -929,30 +956,37 @@ function Library:UpdateSearch(SearchText)
             if not FirstVisibleTab then
                 FirstVisibleTab = Tab
             end
-            if Tab == Library.ActiveTab then
+            if Tab == Window.ActiveTab then
                 ActiveHasVisible = true
             end
         end
     end
 
-    if Library.GlobalSearch then
-        if ActiveHasVisible and Library.ActiveTab then
-            Library.ActiveTab:RefreshSides()
+    if Window.GlobalSearch then
+        if ActiveHasVisible and Window.ActiveTab then
+            Window.ActiveTab:RefreshSides()
         elseif FirstVisibleTab then
             local SearchMarker = SearchText
             task.defer(function()
-                if Library.SearchText ~= SearchMarker then
+                if Window.SearchText ~= SearchMarker then
                     return
                 end
 
-                if Library.ActiveTab ~= FirstVisibleTab then
+                if Window.ActiveTab ~= FirstVisibleTab then
                     FirstVisibleTab:Show()
                 end
             end)
         end
-        Library.LastSearchTab = nil
+        Window.LastSearchTab = nil
     else
-        Library.LastSearchTab = Library.ActiveTab
+        Window.LastSearchTab = Window.ActiveTab
+    end
+
+    Library.Searching = Window.Searching
+    Library.SearchText = Window.SearchText
+    Library.LastSearchTab = Window.LastSearchTab
+    if Window.ActiveTab then
+        Library.ActiveTab = Window.ActiveTab
     end
 end
 
@@ -1865,6 +1899,10 @@ function Library:DestroyComponent(component)
         component.RegistryTable[component.RegistryKey] = nil
     end
 
+    if component.WindowRegistryTable and component.WindowRegistryKey ~= nil then
+        component.WindowRegistryTable[component.WindowRegistryKey] = nil
+    end
+
     if typeof(component.Holder) == "Instance" and component.Holder.Parent then
         pcall(function()
             component.Holder:Destroy()
@@ -1881,10 +1919,35 @@ function Library:DestroyComponent(component)
     end
 end
 
+function Library:ResolveWindowRegistry(window, registryTable)
+    if type(window) ~= "table" or type(window.Registries) ~= "table" then
+        return nil
+    end
+
+    if registryTable == Options then
+        return window.Registries.Options
+    elseif registryTable == Toggles then
+        return window.Registries.Toggles
+    elseif registryTable == Labels then
+        return window.Registries.Labels
+    elseif registryTable == Buttons then
+        return window.Registries.Buttons
+    end
+
+    return nil
+end
+
 function Library:BindComponentLifecycle(component, groupbox, registryTable, registryKey)
     component.Groupbox = groupbox
     component.RegistryTable = registryTable
     component.RegistryKey = registryKey
+    component.Window = groupbox and groupbox.Window or nil
+    component.WindowRegistryKey = registryKey
+    component.WindowRegistryTable = Library:ResolveWindowRegistry(component.Window, registryTable)
+
+    if component.WindowRegistryTable and registryKey ~= nil then
+        component.WindowRegistryTable[registryKey] = component
+    end
 
     function component:Destroy()
         Library:DestroyComponent(component)
@@ -1920,6 +1983,126 @@ function Library:SafeCallback(Func: (...any) -> ...any, ...: any)
     end
 
     return table.unpack(Result, 2, Result.n)
+end
+
+function Library:OnOptionChanged(Callback)
+    assert(typeof(Callback) == "function", "Expected function for OnOptionChanged callback")
+    return Library.OnObjectChanged.Event:Connect(Callback)
+end
+
+function Library:EmitOptionChanged(Idx, Value)
+    if Library.OnObjectChanged then
+        Library.OnObjectChanged:Fire(Idx, Value)
+    end
+end
+
+function Library:GetRegistry(Name)
+    if type(Name) ~= "string" then
+        return nil
+    end
+
+    return Library.Registries and Library.Registries[Name] or nil
+end
+
+function Library:GetOption(Idx)
+    return Library.Options[Idx]
+end
+
+function Library:GetToggle(Idx)
+    return Library.Toggles[Idx]
+end
+
+function Library:GetLabel(Idx)
+    return Library.Labels[Idx]
+end
+
+function Library:GetButton(Idx)
+    return Library.Buttons[Idx]
+end
+
+function Library:ForEachRegistryEntry(Name, Callback)
+    local registry = Library:GetRegistry(Name)
+    if type(registry) ~= "table" or typeof(Callback) ~= "function" then
+        return
+    end
+
+    for key, value in pairs(registry) do
+        Callback(key, value)
+    end
+end
+
+function Library:ForEachOption(Callback)
+    Library:ForEachRegistryEntry("Options", Callback)
+end
+
+function Library:CloseTransientElements()
+    Library:ForEachOption(function(_, Option)
+        if type(Option) ~= "table" then
+            return
+        end
+
+        if (Option.Type == "Dropdown" or Option.Type == "KeyPicker") and Option.Menu and type(Option.Menu.Close) == "function" then
+            Option.Menu:Close()
+        end
+    end)
+end
+
+function Library:ClearRegistries()
+    for _, registry in pairs(Library.Registries or {}) do
+        if type(registry) == "table" then
+            table.clear(registry)
+        end
+    end
+end
+
+function Library:GetContextWindow(Context)
+    if type(Context) ~= "table" then
+        return Library.ActiveWindow
+    end
+
+    return Context.Window
+        or Context.Tab and Context.Tab.Window
+        or Context.Groupbox and Context.Groupbox.Window
+        or Library.ActiveWindow
+end
+
+function Library:IsSearchActive(Context)
+    local Window = Library:GetContextWindow(Context)
+    if Window then
+        return Window.Searching == true
+    end
+
+    return Library.Searching == true
+end
+
+function Library:GetSearchText(Context)
+    local Window = Library:GetContextWindow(Context)
+    if Window and type(Window.SearchText) == "string" then
+        return Window.SearchText
+    end
+
+    return Library.SearchText
+end
+
+function Library:RefreshSearch(Context)
+    local Window = Library:GetContextWindow(Context)
+    local SearchText = Library:GetSearchText(Context)
+
+    if Window and type(Window.UpdateSearch) == "function" then
+        Window:UpdateSearch(SearchText)
+    else
+        Library:UpdateSearch(SearchText)
+    end
+end
+
+function Library:IsAnyWindowVisible()
+    for _, Window in ipairs(Library.Windows) do
+        if type(Window) == "table" and Window.Visible then
+            return true
+        end
+    end
+
+    return false
 end
 
 function Library:MakeDraggable(UI: GuiObject, DragFrame: GuiObject, IgnoreToggled: boolean?, IsMainWindow: boolean?)
@@ -2613,6 +2796,10 @@ Library:OnUnload(function()
 end)
 
 function Library:Unload()
+    if Library.Unloaded then
+        return
+    end
+
     Library.Unloaded = true
 
     if CurrentMenu and type(CurrentMenu.Destroy) == "function" then
@@ -2658,16 +2845,14 @@ function Library:Unload()
 
     table.clear(Library.Tabs)
     table.clear(Library.TabButtons)
-    table.clear(Library.Options)
-    table.clear(Library.Toggles)
-    table.clear(Library.Labels)
-    table.clear(Library.Buttons)
+    Library:ClearRegistries()
     table.clear(Library.UnloadSignals)
     table.clear(Library.DependencyBoxes)
     table.clear(Library.ContextMenus)
     table.clear(Library.Notifications)
     table.clear(Library.Dialogues)
     table.clear(Library.KeybindToggles)
+    table.clear(Library.Windows)
 
     -- Clear global managers if they exist
     if getgenv().MidgardSaveManager then getgenv().MidgardSaveManager = nil end
@@ -2676,6 +2861,23 @@ function Library:Unload()
     table.clear(Library.Registry)
     table.clear(Library.Corners)
     table.clear(Library.Scales)
+
+    Library.ActiveDialog = nil
+    Library.ActiveWindow = nil
+    Library.ActiveTab = nil
+    Library.LastSearchTab = nil
+    Library.Searching = false
+    Library.SearchText = ""
+    Library.KeybindFrame = nil
+    Library.KeybindContainer = nil
+    Library.ScreenGui = nil
+
+    if Library.OnObjectChanged then
+        pcall(function()
+            Library.OnObjectChanged:Destroy()
+        end)
+        Library.OnObjectChanged = nil
+    end
 
     getgenv().Library = nil
 end
@@ -2690,7 +2892,7 @@ function Library:SetIconModule(module: IconModule)
     FetchIcons = true
     Icons = module
 
-    -- Top ten fixes ðŸš€
+    -- Top ten fixes 🚀
     CheckIcon = Library:GetIcon("check")
     ArrowIcon = Library:GetIcon("chevron-up")
     ResizeIcon = Library:GetIcon("move-diagonal-2")
@@ -3178,7 +3380,7 @@ do
             Library:DispatchListeners(KeyPicker.ChangedCallbacks, KeyCode, NewModifiers)
 
             KeyPicker:Update()
-            Library.OnObjectChanged:Fire(KeyPicker.Idx, KeyPicker.Value)
+            Library:EmitOptionChanged(KeyPicker.Idx, KeyPicker.Value)
         end
 
         function KeyPicker:SetText(Text)
@@ -4085,7 +4287,7 @@ do
             Library:SafeCallback(Toggle.Callback, Toggle.Value)
             Library:DispatchListeners(Toggle.ChangedCallbacks, Toggle.Value)
 
-            Library.OnObjectChanged:Fire(Idx, Toggle.Value)
+            Library:EmitOptionChanged(Idx, Toggle.Value)
         end
 
         function Toggle:SetDisabled(Disabled: boolean)
@@ -4311,7 +4513,7 @@ do
             Library:SafeCallback(Toggle.Callback, Toggle.Value)
             Library:DispatchListeners(Toggle.ChangedCallbacks, Toggle.Value)
 
-            Library.OnObjectChanged:Fire(Idx, Toggle.Value)
+            Library:EmitOptionChanged(Idx, Toggle.Value)
         end
 
         function Toggle:SetDisabled(Disabled: boolean)
@@ -4518,7 +4720,7 @@ do
                 Library:SafeCallback(Input.Callback, Input.Value)
                 Library:DispatchListeners(Input.ChangedCallbacks, Input.Value)
 
-                Library.OnObjectChanged:Fire(Idx, Input.Value)
+                Library:EmitOptionChanged(Idx, Input.Value)
             end
         end
 
@@ -4813,7 +5015,7 @@ do
             Library:SafeCallback(Slider.Callback, Slider.Value)
             Library:DispatchListeners(Slider.ChangedCallbacks, Slider.Value)
 
-            Library.OnObjectChanged:Fire(Idx, Slider.Value)
+            Library:EmitOptionChanged(Idx, Slider.Value)
         end
 
         function Slider:SetDisabled(Disabled: boolean)
@@ -5320,7 +5522,7 @@ do
                         Library:SafeCallback(Dropdown.Callback, Dropdown.Value)
                         Library:DispatchListeners(Dropdown.ChangedCallbacks, Dropdown.Value)
 
-                        Library.OnObjectChanged:Fire(Idx, Dropdown.Value)
+                        Library:EmitOptionChanged(Idx, Dropdown.Value)
                     end)
                 end
 
@@ -6186,6 +6388,8 @@ do
             Visible = false,
             Dependencies = {},
 
+            Groupbox = Groupbox,
+            Window = Groupbox.Window,
             Holder = DepboxContainer,
             Container = DepboxContainer,
 
@@ -6198,7 +6402,7 @@ do
         end
 
         DepboxList:GetPropertyChangedSignal("AbsoluteContentSize"):Connect(function()
-            if Depbox.Visible and not Library.Searching then
+            if Depbox.Visible and not Library:IsSearchActive(Depbox) then
                 Depbox:Resize()
             end
         end)
@@ -6231,12 +6435,12 @@ do
 
             Depbox.Visible = true
             DepboxContainer.Visible = true
-            if not Library.Searching then
+            if not Library:IsSearchActive(Depbox) then
                 task.defer(function()
                     Depbox:Resize()
                 end)
             elseif not CancelSearch then
-                Library:UpdateSearch(Library.SearchText)
+                Library:RefreshSearch(Depbox)
             end
         end
 
@@ -6327,6 +6531,8 @@ do
             Container = DepGroupboxContainer,
 
             Tab = Tab,
+            Groupbox = Groupbox,
+            Window = Groupbox.Window,
             Elements = {},
             DependencyBoxes = {},
         }
@@ -6362,11 +6568,11 @@ do
             end
 
             DepGroupbox.Visible = true
-            if not Library.Searching then
+            if not Library:IsSearchActive(DepGroupbox) then
                 DepGroupboxContainer.Visible = true
                 DepGroupbox:Resize()
             elseif not CancelSearch then
-                Library:UpdateSearch(Library.SearchText)
+                Library:RefreshSearch(DepGroupbox)
             end
         end
 
@@ -7218,9 +7424,9 @@ function Library:CreateWindow(WindowInfo)
             })
 
             Library:MakeResizable(MainFrame, ResizeButton, function()
-                for _, Tab in Library.Tabs do
+                Window:ForEachTab(function(_, Tab)
                     Tab:Resize(true)
-                end
+                end)
             end)
         end
 
@@ -7270,7 +7476,91 @@ function Library:CreateWindow(WindowInfo)
     end
 
     --// Window Table \\--
-    local Window = {}
+    local Window = {
+        ActiveTab = nil,
+        GlobalSearch = WindowInfo.GlobalSearch,
+        Registries = {
+            Labels = {},
+            Buttons = {},
+            Toggles = {},
+            Options = {},
+        },
+        LastSearchTab = nil,
+        Searching = false,
+        SearchText = "",
+        TabButtons = {},
+        Tabs = {},
+        Visible = false,
+    }
+
+    function Window:GetRegistry(Name)
+        if type(Name) ~= "string" then
+            return nil
+        end
+
+        return Window.Registries[Name]
+    end
+
+    function Window:GetOption(Idx)
+        return Window.Registries.Options[Idx]
+    end
+
+    function Window:GetToggle(Idx)
+        return Window.Registries.Toggles[Idx]
+    end
+
+    function Window:GetLabel(Idx)
+        return Window.Registries.Labels[Idx]
+    end
+
+    function Window:GetButton(Idx)
+        return Window.Registries.Buttons[Idx]
+    end
+
+    function Window:ForEachRegistryEntry(Name, Callback)
+        local registry = Window:GetRegistry(Name)
+        if type(registry) ~= "table" or typeof(Callback) ~= "function" then
+            return
+        end
+
+        for key, value in pairs(registry) do
+            Callback(key, value)
+        end
+    end
+
+    function Window:ForEachOption(Callback)
+        Window:ForEachRegistryEntry("Options", Callback)
+    end
+
+    function Window:ForEachTab(Callback)
+        if typeof(Callback) ~= "function" then
+            return
+        end
+
+        for key, value in pairs(Window.Tabs) do
+            Callback(key, value)
+        end
+    end
+
+    function Window:ClearRegistries()
+        for _, registry in pairs(Window.Registries) do
+            table.clear(registry)
+        end
+    end
+
+    function Window:UpdateSearch(SearchText)
+        UpdateWindowSearchState(Window, SearchText)
+    end
+
+    function Window:SetActive()
+        Library.ActiveWindow = Window
+        if Window.ActiveTab then
+            Library.ActiveTab = Window.ActiveTab
+        end
+        Library.Searching = Window.Searching
+        Library.SearchText = Window.SearchText
+        Library.LastSearchTab = Window.LastSearchTab
+    end
 
     function Window:ChangeTitle(title)
         assert(typeof(title) == "string", "Expected string for title got: " .. typeof(title))
@@ -7296,8 +7586,14 @@ function Library:CreateWindow(WindowInfo)
     end
 
     function Window:Destroy()
+        Window:Hide()
+        Library:RemoveArrayItem(Library.Windows, Window)
+        Window:ClearRegistries()
         Library:Unload()
     end
+
+    table.insert(Library.Windows, Window)
+    Window:SetActive()
 
     function Window:SetCornerRadius(Radius: number)
         assert(typeof(Radius) == "number", "Expected number for Radius got: " .. typeof(Radius))
@@ -7317,15 +7613,15 @@ function Library:CreateWindow(WindowInfo)
         ResizeButton.Position = UDim2.new(1, -Radius / 4, 0, 0)
         BottomBackground.Size = UDim2.new(1, 0, 0, 20 + Radius)
 
-        for _, Tab in Library.Tabs do
+        Window:ForEachTab(function(_, Tab)
             if Tab.IsKeyTab then
-                continue
+                return
             end
 
             for _, Tabbox in Tab.Tabboxes do
                 Tabbox:UpdateCorners()
             end
-        end
+        end)
     end
 
     local function ApplyCompact()
@@ -7339,7 +7635,7 @@ function Library:CreateWindow(WindowInfo)
             WindowIcon.Visible = IsCompact
         end
 
-        for _, Button in Library.TabButtons do
+        for _, Button in Window.TabButtons do
             if not Button.Icon then
                 continue
             end
@@ -7472,6 +7768,7 @@ function Library:CreateWindow(WindowInfo)
                 Icon = TabIcon,
             }
             table.insert(Library.TabButtons, TabButtonData)
+            table.insert(Window.TabButtons, TabButtonData)
 
             --// Tab Container \\--
             TabContainer = New("Frame", {
@@ -7639,6 +7936,7 @@ function Library:CreateWindow(WindowInfo)
 
         --// Tab Table \\--
         local Tab = {
+            Window = Window,
             Groupboxes = {},
             Tabboxes = {},
             DependencyGroupboxes = {},
@@ -7861,6 +8159,7 @@ function Library:CreateWindow(WindowInfo)
 
                 Visible = true,
                 Tab = Tab,
+                Window = Window,
                 DependencyBoxes = {},
                 Elements = {},
             }
@@ -7892,7 +8191,7 @@ function Library:CreateWindow(WindowInfo)
             end
 
             GroupboxList:GetPropertyChangedSignal("AbsoluteContentSize"):Connect(function()
-                if not Library.Searching then
+                if not Library:IsSearchActive(Groupbox) then
                     Groupbox:Resize()
                 end
             end)
@@ -8194,7 +8493,7 @@ function Library:CreateWindow(WindowInfo)
                 end
 
                 List:GetPropertyChangedSignal("AbsoluteContentSize"):Connect(function()
-                    if Tabbox.ActiveTab == Tab and not Library.Searching then
+                    if Tabbox.ActiveTab == Tab and not Library:IsSearchActive(Tab) then
                         Tab:Resize()
                     end
                 end)
@@ -8387,7 +8686,7 @@ function Library:CreateWindow(WindowInfo)
         end
 
         function Tab:Hover(Hovering)
-            if Library.ActiveTab == Tab then
+            if Window.ActiveTab == Tab then
                 return
             end
 
@@ -8402,8 +8701,8 @@ function Library:CreateWindow(WindowInfo)
         end
 
         function Tab:Show()
-            if Library.ActiveTab then
-                Library.ActiveTab:Hide()
+            if Window.ActiveTab then
+                Window.ActiveTab:Hide()
             end
 
             TweenService:Create(TabButton, Library.TweenInfo, {
@@ -8425,10 +8724,11 @@ function Library:CreateWindow(WindowInfo)
             TabContainer.Visible = true
             Tab:RefreshSides()
 
+            Window.ActiveTab = Tab
             Library.ActiveTab = Tab
 
-            if Library.Searching then
-                Library:UpdateSearch(Library.SearchText)
+            if Window.Searching then
+                Window:UpdateSearch(Window.SearchText)
             end
         end
 
@@ -8448,13 +8748,18 @@ function Library:CreateWindow(WindowInfo)
 
             Window:HideTabInfo()
 
-            Library.ActiveTab = nil
+            if Window.ActiveTab == Tab then
+                Window.ActiveTab = nil
+            end
+            if Library.ActiveTab == Tab then
+                Library.ActiveTab = nil
+            end
         end
 
         function Tab:SetVisible(Visible: boolean)
             TabButton.Visible = Visible
 
-            if not Visible and Library.ActiveTab == Tab then
+            if not Visible and Window.ActiveTab == Tab then
                 Tab:Hide()
             end
             
@@ -8472,12 +8777,14 @@ function Library:CreateWindow(WindowInfo)
             Library:DestroyCollection(Tab.Tabboxes)
             Library:DestroyCollection(Tab.Groupboxes)
 
-            if Library.ActiveTab == Tab then
+            if Window.ActiveTab == Tab then
                 Tab:Hide()
             end
 
             Library:RemoveTableReference(Library.Tabs, Name, Tab)
             Library:RemoveArrayItem(Library.TabButtons, TabButtonData)
+            Library:RemoveTableReference(Window.Tabs, Name, Tab)
+            Library:RemoveArrayItem(Window.TabButtons, TabButtonData)
 
             if TabButton and TabButton.Parent then
                 TabButton:Destroy()
@@ -8488,7 +8795,7 @@ function Library:CreateWindow(WindowInfo)
         end
 
         --// Execution \\--
-        if not Library.ActiveTab then
+        if not Window.ActiveTab then
             Tab:Show()
         end
 
@@ -8501,6 +8808,7 @@ function Library:CreateWindow(WindowInfo)
         TabButton.MouseButton1Click:Connect(Tab.Show)
 
         Library.Tabs[Name] = Tab
+        Window.Tabs[Name] = Tab
 
         return Tab
     end
@@ -8605,6 +8913,7 @@ function Library:CreateWindow(WindowInfo)
         local Tab = {
             Elements = {},
             IsKeyTab = true,
+            Window = Window,
         }
 
         function Tab:AddKeyBox(Callback)
@@ -8680,7 +8989,7 @@ function Library:CreateWindow(WindowInfo)
         function Tab:UpdateCorners() end
 
         function Tab:Hover(Hovering)
-            if Library.ActiveTab == Tab then
+            if Window.ActiveTab == Tab then
                 return
             end
 
@@ -8695,8 +9004,8 @@ function Library:CreateWindow(WindowInfo)
         end
 
         function Tab:Show()
-            if Library.ActiveTab then
-                Library.ActiveTab:Hide()
+            if Window.ActiveTab then
+                Window.ActiveTab:Hide()
             end
 
             TweenService:Create(TabButton, Library.TweenInfo, {
@@ -8718,10 +9027,11 @@ function Library:CreateWindow(WindowInfo)
 
             Tab:RefreshSides()
 
+            Window.ActiveTab = Tab
             Library.ActiveTab = Tab
 
-            if Library.Searching then
-                Library:UpdateSearch(Library.SearchText)
+            if Window.Searching then
+                Window:UpdateSearch(Window.SearchText)
             end
         end
 
@@ -8741,13 +9051,18 @@ function Library:CreateWindow(WindowInfo)
 
             Window:HideTabInfo()
 
-            Library.ActiveTab = nil
+            if Window.ActiveTab == Tab then
+                Window.ActiveTab = nil
+            end
+            if Library.ActiveTab == Tab then
+                Library.ActiveTab = nil
+            end
         end
 
         function Tab:SetVisible(Visible: boolean)
             TabButton.Visible = Visible
 
-            if not Visible and Library.ActiveTab == Tab then
+            if not Visible and Window.ActiveTab == Tab then
                 Tab:Hide()
             end
             
@@ -8761,12 +9076,14 @@ function Library:CreateWindow(WindowInfo)
             end
 
             Tab.Destroyed = true
-            if Library.ActiveTab == Tab then
+            if Window.ActiveTab == Tab then
                 Tab:Hide()
             end
 
             Library:RemoveTableReference(Library.Tabs, Name, Tab)
             Library:RemoveArrayItem(Library.TabButtons, TabButtonData)
+            Library:RemoveTableReference(Window.Tabs, Name, Tab)
+            Library:RemoveArrayItem(Window.TabButtons, TabButtonData)
 
             if TabButton and TabButton.Parent then
                 TabButton:Destroy()
@@ -8777,7 +9094,7 @@ function Library:CreateWindow(WindowInfo)
         end
 
         --// Execution \\--
-        if not Library.ActiveTab then
+        if not Window.ActiveTab then
             Tab:Show()
         end
 
@@ -8793,6 +9110,7 @@ function Library:CreateWindow(WindowInfo)
         setmetatable(Tab, BaseGroupbox)
 
         Library.Tabs[Name] = Tab
+        Window.Tabs[Name] = Tab
 
         return Tab
     end
@@ -9280,17 +9598,18 @@ function Library:CreateWindow(WindowInfo)
         return Dialog
     end
 
-    function Library:Toggle(Value: boolean?)
-        if typeof(Value) == "boolean" then
-            Library.Toggled = Value
-        else
-            Library.Toggled = not Library.Toggled
+    function Window:SetVisible(Value: boolean)
+        Window.Visible = Value
+        MainFrame.Visible = Value
+
+        if Value then
+            Window:SetActive()
         end
 
-        MainFrame.Visible = Library.Toggled
+        Library.Toggled = Library:IsAnyWindowVisible()
 
         if WindowInfo.UnlockMouseWhileOpen then
-            ModalElement.Modal = Library.Toggled
+            ModalElement.Modal = Value
         end
 
         if Library.Toggled and not Library.IsMobile then
@@ -9313,11 +9632,46 @@ function Library:CreateWindow(WindowInfo)
         elseif not Library.Toggled then
             TooltipLabel.Visible = false
 
-            for _, Option in Library.Options do
-                if Option.Type == "Dropdown" or Option.Type == "KeyPicker" then
-                    Option.Menu:Close()
+            Library:CloseTransientElements()
+        end
+    end
+
+    function Window:Show()
+        Window:SetVisible(true)
+    end
+
+    function Window:Hide()
+        Window:SetVisible(false)
+
+        if Library.ActiveWindow == Window then
+            Library.ActiveWindow = nil
+            Library.ActiveTab = nil
+            Library.LastSearchTab = nil
+            Library.Searching = false
+            Library.SearchText = ""
+
+            for index = #Library.Windows, 1, -1 do
+                local Candidate = Library.Windows[index]
+                if type(Candidate) == "table" and Candidate.Visible then
+                    Candidate:SetActive()
+                    break
                 end
             end
+        end
+    end
+
+    function Window:Toggle(Value: boolean?)
+        if typeof(Value) == "boolean" then
+            Window:SetVisible(Value)
+        else
+            Window:SetVisible(not Window.Visible)
+        end
+    end
+
+    function Library:Toggle(Value: boolean?, TargetWindow)
+        local WindowTarget = TargetWindow or Library.ActiveWindow or Window
+        if WindowTarget and type(WindowTarget.Toggle) == "function" then
+            WindowTarget:Toggle(Value)
         end
     end
 
@@ -9398,7 +9752,9 @@ function Library:CreateWindow(WindowInfo)
         Window:SetSidebarWidth(WindowInfo.SidebarCompactWidth)
     end
     if WindowInfo.AutoShow then
-        task.defer(Library.Toggle)
+        task.defer(function()
+            Window:Show()
+        end)
     end
 
     local ShouldShowToggle = WindowInfo.ShowToggleButton
@@ -9413,7 +9769,7 @@ function Library:CreateWindow(WindowInfo)
         end
 
         local ToggleButton = Library:AddDraggableButton("", function()
-            Library:Toggle()
+            Window:Toggle()
         end, true)
         
         ToggleButton.Button.Visible = true
