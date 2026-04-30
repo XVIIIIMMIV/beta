@@ -2105,6 +2105,30 @@ function Library:IsAnyWindowVisible()
     return false
 end
 
+function Library:GetActiveDialog(Context)
+    local Window = Library:GetContextWindow(Context)
+    if Window and Window.ActiveDialog then
+        return Window.ActiveDialog
+    end
+
+    for index = #Library.Windows, 1, -1 do
+        local Candidate = Library.Windows[index]
+        if type(Candidate) == "table" and Candidate.ActiveDialog then
+            return Candidate.ActiveDialog
+        end
+    end
+
+    return Library.ActiveDialog
+end
+
+function Library:GetWindowToggleKeybind(Window)
+    if type(Window) == "table" and Window.ToggleKeybind ~= nil then
+        return Window.ToggleKeybind
+    end
+
+    return Library.ToggleKeybind
+end
+
 function Library:MakeDraggable(UI: GuiObject, DragFrame: GuiObject, IgnoreToggled: boolean?, IsMainWindow: boolean?)
     local StartPos
     local FramePos
@@ -2697,9 +2721,10 @@ function Library:AddTooltip(InfoStr: string, DisabledInfoStr: string, HoverInsta
     }
 
     local function DoHover()
+        local ActiveDialog = Library:GetActiveDialog()
         if
             CurrentHoverInstance == HoverInstance
-            or Library.ActiveDialog
+            or ActiveDialog
             or (CurrentMenu and Library:MouseIsOverFrame(CurrentMenu.Menu, Mouse))
             or (TooltipTable.Disabled and typeof(DisabledInfoStr) ~= "string")
             or (not TooltipTable.Disabled and typeof(InfoStr) ~= "string")
@@ -2714,7 +2739,7 @@ function Library:AddTooltip(InfoStr: string, DisabledInfoStr: string, HoverInsta
         while
             Library.Toggled
             and not Library.Unloaded
-            and not Library.ActiveDialog
+            and not Library:GetActiveDialog()
             and Library:MouseIsOverFrame(HoverInstance, Mouse)
             and not (CurrentMenu and Library:MouseIsOverFrame(CurrentMenu.Menu, Mouse))
         do
@@ -7094,7 +7119,9 @@ function Library:CreateWindow(WindowInfo)
     Library:SetNotifySide(WindowInfo.NotifySide)
     Library.ShowCustomCursor = WindowInfo.ShowCustomCursor
     Library.Scheme.Font = WindowInfo.Font
-    Library.ToggleKeybind = WindowInfo.ToggleKeybind
+    if Library.ToggleKeybind == nil then
+        Library.ToggleKeybind = WindowInfo.ToggleKeybind
+    end
     Library.GlobalSearch = WindowInfo.GlobalSearch
 
     local IsDefaultSearchbarSize = WindowInfo.SearchbarSize == UDim2.fromScale(1, 1)
@@ -7483,6 +7510,7 @@ function Library:CreateWindow(WindowInfo)
         ActiveDialog = nil,
         Dialogues = {},
         GlobalSearch = WindowInfo.GlobalSearch,
+        ToggleKeybind = WindowInfo.ToggleKeybind,
         Registries = {
             Labels = {},
             Buttons = {},
@@ -7563,6 +7591,7 @@ function Library:CreateWindow(WindowInfo)
         end
 
         Library.ActiveWindow = Window
+        Library.ActiveDialog = Window.ActiveDialog
         if Window.ActiveTab then
             Library.ActiveTab = Window.ActiveTab
         end
@@ -9893,14 +9922,17 @@ function Library:CreateWindow(WindowInfo)
             return
         end
 
+        local ActiveWindow = Library.ActiveWindow
+        local ToggleKeybind = Library:GetWindowToggleKeybind(ActiveWindow)
+
         if
             (
-                typeof(Library.ToggleKeybind) == "table"
-                and Library.ToggleKeybind.Type == "KeyPicker"
-                and Input.KeyCode.Name == Library.ToggleKeybind.Value
-            ) or Input.KeyCode == Library.ToggleKeybind
+                typeof(ToggleKeybind) == "table"
+                and ToggleKeybind.Type == "KeyPicker"
+                and Input.KeyCode.Name == ToggleKeybind.Value
+            ) or Input.KeyCode == ToggleKeybind
         then
-            Library.Toggle()
+            Library:Toggle(nil, ActiveWindow)
         end
     end))
 
