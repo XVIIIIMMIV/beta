@@ -5127,6 +5127,7 @@ do
         Groupbox:Resize()
 
         Dropdown.Holder = Holder
+        Dropdown.Groupbox = Groupbox
         table.insert(Groupbox.Elements, Dropdown)
 
         Dropdown.Default = Defaults
