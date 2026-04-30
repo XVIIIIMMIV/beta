@@ -91,6 +91,8 @@ local Library = {
     ShowToggleFrameInKeybinds = true,
     CollapsibleStartCollapsed = true,
     NotifyOnError = false,
+    DebugEnabled = false,
+    DebugScopes = {},
 
     CantDragForced = false,
 
@@ -1118,6 +1120,29 @@ function Library:UtilityLog(Kind, Message)
     warn(string.format("[%s] %s", tostring(Kind or "Library"), tostring(Message or "")))
 end
 
+function Library:SetDebugEnabled(Enabled, Scopes)
+    Library.DebugEnabled = Enabled == true
+    Library.DebugScopes = type(Scopes) == "table" and table.clone(Scopes) or {}
+end
+
+function Library:DebugLog(Scope, Message, ...)
+    if not Library.DebugEnabled then
+        return
+    end
+
+    if next(Library.DebugScopes) and not Library.DebugScopes[Scope] then
+        return
+    end
+
+    local formatted = tostring(Message or "")
+    local ok, result = pcall(string.format, formatted, ...)
+    if ok then
+        formatted = result
+    end
+
+    Library:UtilityLog("Library:" .. tostring(Scope or "General"), formatted)
+end
+
 -- Anti-AFK Cleanup
 -- Disables existing idle listeners before applying the shared anti-AFK flow.
 function Library:DisableIdledConnections()
@@ -1926,6 +1951,40 @@ function Library:EmitOptionChanged(Idx, Value)
     end
 end
 
+function Library:GetDiagnostics()
+    local function countEntries(container)
+        local count = 0
+        for _ in pairs(container or {}) do
+            count += 1
+        end
+        return count
+    end
+
+    local visibleWindows = 0
+    for _, window in ipairs(Library.Windows) do
+        if type(window) == "table" and window.Visible then
+            visibleWindows += 1
+        end
+    end
+
+    return {
+        Unloaded = Library.Unloaded == true,
+        Toggled = Library.Toggled == true,
+        ActiveWindowTitle = Library.ActiveWindow and Library.ActiveWindow.Title or nil,
+        ActiveTabTitle = Library.ActiveTab and Library.ActiveTab.Title or nil,
+        Searching = Library.Searching == true,
+        SearchText = Library.SearchText,
+        VisibleWindows = visibleWindows,
+        WindowCount = countEntries(Library.Windows),
+        TabCount = countEntries(Library.Tabs),
+        NotificationCount = countEntries(Library.Notifications),
+        DialogCount = countEntries(Library.Dialogues),
+        ContextMenuCount = countEntries(Library.ContextMenus),
+        SignalCount = countEntries(Library.Signals),
+        ToggleKeybind = Library:GetWindowToggleKeybind(Library.ActiveWindow),
+    }
+end
+
 function Library:GetRegistry(Name)
     if type(Name) ~= "string" then
         return nil
@@ -2069,11 +2128,143 @@ function Library:GetActiveDialog(Context)
 end
 
 function Library:GetWindowToggleKeybind(Window)
-    if type(Window) == "table" and Window.ToggleKeybind ~= nil then
+    if type(Window) == "table" and Window.ToggleKeybindConfigured then
         return Window.ToggleKeybind
     end
 
     return Library.ToggleKeybind
+end
+
+-- Normalizes accepted toggle-keybind inputs into a library-consumable binding.
+function Library:NormalizeToggleKeybind(Binding)
+    local bindingType = typeof(Binding)
+    if Binding == nil then
+        return nil
+    end
+
+    if bindingType == "EnumItem" and Binding.EnumType == Enum.KeyCode then
+        return Binding
+    end
+
+    if bindingType == "table" and Binding.Type == "KeyPicker" then
+        return Binding
+    end
+
+    if type(Binding) == "string" then
+        return Enum.KeyCode[Binding] or nil
+    end
+
+    return nil
+end
+
+function Library:ShallowMapEquals(Left, Right)
+    if Left == Right then
+        return true
+    end
+
+    if type(Left) ~= "table" or type(Right) ~= "table" then
+        return false
+    end
+
+    for Key, Value in pairs(Left) do
+        if Right[Key] ~= Value then
+            return false
+        end
+    end
+
+    for Key, Value in pairs(Right) do
+        if Left[Key] ~= Value then
+            return false
+        end
+    end
+
+    return true
+end
+
+-- Keeps a group of single-select dropdowns mutually exclusive and backfills gaps.
+function Library:BindExclusiveDropdownGroup(Dropdowns, FallbackValues)
+    if type(Dropdowns) ~= "table" then
+        return function() end
+    end
+
+    local dropdownList = {}
+    for _, dropdown in ipairs(Dropdowns) do
+        if type(dropdown) == "table" and dropdown.Type == "Dropdown" then
+            table.insert(dropdownList, dropdown)
+        end
+    end
+
+    local fallbackList = {}
+    for _, value in ipairs(type(FallbackValues) == "table" and FallbackValues or {}) do
+        fallbackList[#fallbackList + 1] = value
+    end
+
+    local applying = false
+    local function normalize(forceDefault)
+        if applying then
+            return
+        end
+
+        applying = true
+
+        local allowed = {}
+        local allowedList = {}
+        for _, dropdown in ipairs(dropdownList) do
+            for _, value in ipairs(dropdown.Values or {}) do
+                if allowed[value] ~= true then
+                    allowed[value] = true
+                    allowedList[#allowedList + 1] = value
+                end
+            end
+        end
+
+        local ordered = table.create(#dropdownList)
+        local used = {}
+
+        for index, dropdown in ipairs(dropdownList) do
+            local value = forceDefault and nil or dropdown.Value
+            if type(value) == "string" and allowed[value] and not used[value] then
+                ordered[index] = value
+                used[value] = true
+            end
+        end
+
+        local function assignNextValue(sourceList)
+            for _, candidate in ipairs(sourceList) do
+                if allowed[candidate] and not used[candidate] then
+                    used[candidate] = true
+                    return candidate
+                end
+            end
+
+            return nil
+        end
+
+        for index = 1, #dropdownList do
+            if not ordered[index] then
+                ordered[index] = assignNextValue(fallbackList) or assignNextValue(allowedList)
+            end
+        end
+
+        for index, dropdown in ipairs(dropdownList) do
+            local target = ordered[index]
+            if target and dropdown.Value ~= target then
+                pcall(function()
+                    dropdown:SetValue(target)
+                end)
+            end
+        end
+
+        applying = false
+    end
+
+    for _, dropdown in ipairs(dropdownList) do
+        dropdown:OnChanged(function()
+            normalize(false)
+        end)
+    end
+
+    return normalize
 end
 
 function Library:MakeDraggable(UI: GuiObject, DragFrame: GuiObject, IgnoreToggled: boolean?, IsMainWindow: boolean?)
@@ -4252,6 +4443,10 @@ do
                 return
             end
 
+            if Toggle.Value == Value then
+                return
+            end
+
             Toggle.Value = Value
             Toggle:Display()
 
@@ -4478,6 +4673,10 @@ do
                 return
             end
 
+            if Toggle.Value == Value then
+                return
+            end
+
             Toggle.Value = Value
             Toggle:Display()
 
@@ -4692,15 +4891,17 @@ do
                 Text = Input.EmptyReset
             end
 
+            local Changed = Text ~= Input.Value
             Input.Value = Text
             Box.Text = Text
 
-            if not Input.Disabled then
-                Library:SafeCallback(Input.Callback, Input.Value)
-                Library:DispatchListeners(Input.ChangedCallbacks, Input.Value)
-
-                Library:EmitOptionChanged(Idx, Input.Value)
+            if not Changed or Input.Disabled then
+                return
             end
+
+            Library:SafeCallback(Input.Callback, Input.Value)
+            Library:DispatchListeners(Input.ChangedCallbacks, Input.Value)
+            Library:EmitOptionChanged(Idx, Input.Value)
         end
 
         function Input:SetDisabled(Disabled: boolean)
@@ -5339,6 +5540,37 @@ do
             return Dropdown:GetActiveValues()
         end
 
+        function Dropdown:GetSelectedCount()
+            if Info.Multi then
+                local count = 0
+                for _, enabled in pairs(Dropdown.Value or {}) do
+                    if enabled then
+                        count += 1
+                    end
+                end
+                return count
+            end
+
+            return Dropdown.Value ~= nil and 1 or 0
+        end
+
+        function Dropdown:HasSelection()
+            return Dropdown:GetSelectedCount() > 0
+        end
+
+        function Dropdown:IsSelectionValid()
+            if Info.Multi then
+                for value, enabled in pairs(Dropdown.Value or {}) do
+                    if enabled and not table.find(Dropdown.Values, value) then
+                        return false
+                    end
+                end
+                return true
+            end
+
+            return Dropdown.Value == nil or table.find(Dropdown.Values, Dropdown.Value) ~= nil
+        end
+
         function Dropdown:SetSelectionMap(SelectionMap)
             if type(SelectionMap) ~= "table" then
                 Dropdown:SetValue(Info.Multi and {} or nil)
@@ -5526,6 +5758,7 @@ do
 
         function Dropdown:SetValue(Value)
             local fullyApplied = true
+            local oldValue = Info.Multi and table.clone(Dropdown.Value or {}) or Dropdown.Value
 
             if Info.Multi then
                 local Table = {}
@@ -5561,16 +5794,23 @@ do
             end
 
             Dropdown.PendingValue = fullyApplied and nil or Value
+            local changed
+            if Info.Multi then
+                changed = not Library:ShallowMapEquals(oldValue, Dropdown.Value)
+            else
+                changed = oldValue ~= Dropdown.Value
+            end
 
             Dropdown:Display()
             for _, Button in pairs(DropdownButtons) do
                 Button:UpdateButton()
             end
 
-            if not Dropdown.Disabled then
+            if changed and not Dropdown.Disabled then
                 Library:UpdateDependencyBoxes()
                 Library:SafeCallback(Dropdown.Callback, Dropdown.Value)
                 Library:DispatchListeners(Dropdown.ChangedCallbacks, Dropdown.Value)
+                Library:EmitOptionChanged(Idx, Dropdown.Value)
             end
         end
 
@@ -5642,10 +5882,11 @@ do
 
         function Dropdown:SetText(Text: string)
             Dropdown.Text = Text
-            Holder.Size = UDim2.new(1, 0, 0, Text and 39 or 21)
+            local hasLabel = type(Text) == "string" and Text ~= ""
+            Holder.Size = UDim2.new(1, 0, 0, hasLabel and 39 or 21)
 
-            Label.Text = Text and Text or ""
-            Label.Visible = not not Text
+            Label.Text = hasLabel and Text or ""
+            Label.Visible = hasLabel
         end
 
         Display.MouseButton1Click:Connect(function()
@@ -7072,8 +7313,9 @@ function Library:CreateWindow(WindowInfo)
     Library.CornerRadius = WindowInfo.CornerRadius
     Library:SetNotifySide(WindowInfo.NotifySide)
     Library.Scheme.Font = WindowInfo.Font
+    local normalizedWindowToggleKeybind = Library:NormalizeToggleKeybind(WindowInfo.ToggleKeybind)
     if Library.ToggleKeybind == nil then
-        Library.ToggleKeybind = WindowInfo.ToggleKeybind
+        Library.ToggleKeybind = normalizedWindowToggleKeybind
     end
     Library.GlobalSearch = WindowInfo.GlobalSearch
 
@@ -7463,7 +7705,9 @@ function Library:CreateWindow(WindowInfo)
         ActiveDialog = nil,
         Dialogues = {},
         GlobalSearch = WindowInfo.GlobalSearch,
-        ToggleKeybind = WindowInfo.ToggleKeybind,
+        Title = WindowInfo.Title,
+        ToggleKeybind = normalizedWindowToggleKeybind,
+        ToggleKeybindConfigured = WindowInfo.ToggleKeybind ~= nil,
         Registries = {
             Labels = {},
             Buttons = {},
@@ -7503,6 +7747,10 @@ function Library:CreateWindow(WindowInfo)
         return Window.Registries.Buttons[Idx]
     end
 
+    function Window:GetToggleKeybind()
+        return Window.ToggleKeybindConfigured and Window.ToggleKeybind or nil
+    end
+
     function Window:ForEachRegistryEntry(Name, Callback)
         local registry = Window:GetRegistry(Name)
         if type(registry) ~= "table" or typeof(Callback) ~= "function" then
@@ -7536,6 +7784,22 @@ function Library:CreateWindow(WindowInfo)
 
     function Window:UpdateSearch(SearchText)
         UpdateWindowSearchState(Window, SearchText)
+    end
+
+    -- Sets or disables the window-local toggle keybind. Pass nil to disable fallback for this window.
+    function Window:SetToggleKeybind(Binding)
+        Window.ToggleKeybind = Library:NormalizeToggleKeybind(Binding)
+        Window.ToggleKeybindConfigured = true
+
+        if Library.ActiveWindow == Window then
+            Library.ActiveWindow = Window
+        end
+
+        if Library.ToggleKeybind == nil then
+            Library.ToggleKeybind = Window.ToggleKeybind
+        end
+
+        Library:DebugLog("ToggleKeybind", "Window toggle keybind updated to %s", tostring(Window.ToggleKeybind))
     end
 
     function Window:SetActive()
@@ -9693,6 +9957,12 @@ function Library:CreateWindow(WindowInfo)
     function Window:Hide()
         if Window.Destroyed then
             return
+        end
+
+        if Window.ActiveDialog and type(Window.ActiveDialog.Dismiss) == "function" then
+            pcall(function()
+                Window.ActiveDialog:Dismiss()
+            end)
         end
 
         Window:SetVisible(false)
