@@ -1691,6 +1691,39 @@ function Library:RefreshElementLayout(Groupbox, Holder, Visible)
     end
 end
 
+function Library:CreateListenerList(initial)
+    local listeners = {}
+    if type(initial) == "function" then
+        listeners[1] = initial
+    end
+    return listeners
+end
+
+function Library:AddListener(listeners, func)
+    if type(listeners) ~= "table" or type(func) ~= "function" then
+        return nil
+    end
+
+    for _, existing in ipairs(listeners) do
+        if existing == func then
+            return func
+        end
+    end
+
+    table.insert(listeners, func)
+    return func
+end
+
+function Library:DispatchListeners(listeners, ...)
+    if type(listeners) ~= "table" then
+        return
+    end
+
+    for _, listener in ipairs(listeners) do
+        Library:SafeCallback(listener, ...)
+    end
+end
+
 function Library:MouseIsOverFrame(Frame: GuiObject, Mouse: Vector2): boolean
     local AbsPos, AbsSize = Frame.AbsolutePosition, Frame.AbsoluteSize
     return Mouse.X >= AbsPos.X
@@ -2474,7 +2507,9 @@ do
             Callback = Info.Callback,
             ChangedCallback = Info.ChangedCallback,
             Changed = Info.Changed,
+            ChangedCallbacks = Library:CreateListenerList(Info.Changed),
             Clicked = Info.Clicked,
+            ClickedCallbacks = Library:CreateListenerList(Info.Clicked),
 
             Type = "KeyPicker",
             Idx = Idx,
@@ -2859,10 +2894,12 @@ do
 
         function KeyPicker:OnChanged(Func)
             KeyPicker.Changed = Func
+            return Library:AddListener(KeyPicker.ChangedCallbacks, Func)
         end
 
         function KeyPicker:OnClick(Func)
             KeyPicker.Clicked = Func
+            return Library:AddListener(KeyPicker.ClickedCallbacks, Func)
         end
 
         function KeyPicker:DoClick()
@@ -2875,7 +2912,7 @@ do
             end
 
             Library:SafeCallback(KeyPicker.Callback, KeyPicker.Toggled)
-            Library:SafeCallback(KeyPicker.Clicked, KeyPicker.Toggled)
+            Library:DispatchListeners(KeyPicker.ClickedCallbacks, KeyPicker.Toggled)
 
             if KeyPicker.Mode == "Press" then
                 KeyPicker.Toggled = false
@@ -2918,7 +2955,7 @@ do
 
             local NewModifiers = ConvertToInputModifiers(KeyPicker.Modifiers)
             Library:SafeCallback(KeyPicker.ChangedCallback, KeyCode, NewModifiers)
-            Library:SafeCallback(KeyPicker.Changed, KeyCode, NewModifiers)
+            Library:DispatchListeners(KeyPicker.ChangedCallbacks, KeyCode, NewModifiers)
 
             KeyPicker:Update()
             Library.OnObjectChanged:Fire(KeyPicker.Idx, KeyPicker.Value)
@@ -3693,6 +3730,7 @@ do
 
             Callback = Info.Callback,
             Changed = Info.Changed,
+            ChangedCallbacks = Library:CreateListenerList(Info.Changed),
             Released = Info.Released,
 
             Risky = Info.Risky,
@@ -3794,6 +3832,7 @@ do
 
         function Toggle:OnChanged(Func)
             Toggle.Changed = Func
+            return Library:AddListener(Toggle.ChangedCallbacks, Func)
         end
 
         function Toggle:SetValue(Value)
@@ -3813,7 +3852,7 @@ do
 
             Library:UpdateDependencyBoxes()
             Library:SafeCallback(Toggle.Callback, Toggle.Value)
-            Library:SafeCallback(Toggle.Changed, Toggle.Value)
+            Library:DispatchListeners(Toggle.ChangedCallbacks, Toggle.Value)
 
             Library.OnObjectChanged:Fire(Idx, Toggle.Value)
         end
@@ -3837,10 +3876,7 @@ do
 
         function Toggle:SetVisible(Visible: boolean)
             Toggle.Visible = Visible
-
-            Button.Visible = Toggle.Visible
-            Groupbox:Resize()
-            task.defer(function() Groupbox:Resize() end)
+            Library:RefreshElementLayout(Groupbox, Button, Toggle.Visible)
         end
 
         function Toggle:SetText(Text: string)
@@ -3904,6 +3940,7 @@ do
 
             Callback = Info.Callback,
             Changed = Info.Changed,
+            ChangedCallbacks = Library:CreateListenerList(Info.Changed),
 
             Risky = Info.Risky,
             Disabled = Info.Disabled,
@@ -4020,6 +4057,7 @@ do
 
         function Toggle:OnChanged(Func)
             Toggle.Changed = Func
+            return Library:AddListener(Toggle.ChangedCallbacks, Func)
         end
 
         function Toggle:SetValue(Value)
@@ -4039,7 +4077,7 @@ do
 
             Library:UpdateDependencyBoxes()
             Library:SafeCallback(Toggle.Callback, Toggle.Value)
-            Library:SafeCallback(Toggle.Changed, Toggle.Value)
+            Library:DispatchListeners(Toggle.ChangedCallbacks, Toggle.Value)
 
             Library.OnObjectChanged:Fire(Idx, Toggle.Value)
         end
@@ -4063,10 +4101,7 @@ do
 
         function Toggle:SetVisible(Visible: boolean)
             Toggle.Visible = Visible
-
-            Button.Visible = Toggle.Visible
-            Groupbox:Resize()
-            task.defer(function() Groupbox:Resize() end)
+            Library:RefreshElementLayout(Groupbox, Button, Toggle.Visible)
         end
 
         function Toggle:SetText(Text: string)
@@ -4134,6 +4169,7 @@ do
 
             Callback = Info.Callback,
             Changed = Info.Changed,
+            ChangedCallbacks = Library:CreateListenerList(Info.Changed),
             VerifyValue = Info.VerifyValue,
 
             Disabled = Info.Disabled,
@@ -4213,6 +4249,7 @@ do
 
         function Input:OnChanged(Func)
             Input.Changed = Func
+            return Library:AddListener(Input.ChangedCallbacks, Func)
         end
 
         function Input:SetValue(Text)
@@ -4239,7 +4276,7 @@ do
 
             if not Input.Disabled then
                 Library:SafeCallback(Input.Callback, Input.Value)
-                Library:SafeCallback(Input.Changed, Input.Value)
+                Library:DispatchListeners(Input.ChangedCallbacks, Input.Value)
 
                 Library.OnObjectChanged:Fire(Idx, Input.Value)
             end
@@ -4338,6 +4375,7 @@ do
 
             Callback = Info.Callback,
             Changed = Info.Changed,
+            ChangedCallbacks = Library:CreateListenerList(Info.Changed),
 
             Disabled = Info.Disabled,
             Visible = Info.Visible,
@@ -4470,6 +4508,7 @@ do
 
         function Slider:OnChanged(Func)
             Slider.Changed = Func
+            return Library:AddListener(Slider.ChangedCallbacks, Func)
         end
 
         function Slider:OnReleased(Func)
@@ -4516,7 +4555,7 @@ do
             Slider:Display()
 
             Library:SafeCallback(Slider.Callback, Slider.Value)
-            Library:SafeCallback(Slider.Changed, Slider.Value)
+            Library:DispatchListeners(Slider.ChangedCallbacks, Slider.Value)
 
             Library.OnObjectChanged:Fire(Idx, Slider.Value)
         end
@@ -4655,6 +4694,7 @@ do
 
             Callback = Info.Callback,
             Changed = Info.Changed,
+            ChangedCallbacks = Library:CreateListenerList(Info.Changed),
 
             Disabled = Info.Disabled,
             Visible = Info.Visible,
@@ -4828,6 +4868,7 @@ do
 
         function Dropdown:OnChanged(Func)
             Dropdown.Changed = Func
+            return Library:AddListener(Dropdown.ChangedCallbacks, Func)
         end
 
         function Dropdown:GetActiveValues()
@@ -4931,7 +4972,7 @@ do
 
                         Library:UpdateDependencyBoxes()
                         Library:SafeCallback(Dropdown.Callback, Dropdown.Value)
-                        Library:SafeCallback(Dropdown.Changed, Dropdown.Value)
+                        Library:DispatchListeners(Dropdown.ChangedCallbacks, Dropdown.Value)
 
                         Library.OnObjectChanged:Fire(Idx, Dropdown.Value)
                     end)
@@ -5002,7 +5043,7 @@ do
             if not Dropdown.Disabled then
                 Library:UpdateDependencyBoxes()
                 Library:SafeCallback(Dropdown.Callback, Dropdown.Value)
-                Library:SafeCallback(Dropdown.Changed, Dropdown.Value)
+                Library:DispatchListeners(Dropdown.ChangedCallbacks, Dropdown.Value)
             end
         end
 
