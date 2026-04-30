@@ -7120,10 +7120,12 @@ function Library:CreateWindow(WindowInfo)
     local LastExpandedWidth = InitialLeftWidth
 
     do
-        Library.KeybindFrame, Library.KeybindContainer = Library:AddDraggableMenu("Keybinds")
-        Library.KeybindFrame.AnchorPoint = Vector2.new(0, 0.5)
-        Library.KeybindFrame.Position = UDim2.new(0, 6, 0.5, 0)
-        Library.KeybindFrame.Visible = false
+        if not (Library.KeybindFrame and Library.KeybindFrame.Parent and Library.KeybindContainer and Library.KeybindContainer.Parent) then
+            Library.KeybindFrame, Library.KeybindContainer = Library:AddDraggableMenu("Keybinds")
+            Library.KeybindFrame.AnchorPoint = Vector2.new(0, 0.5)
+            Library.KeybindFrame.Position = UDim2.new(0, 6, 0.5, 0)
+            Library.KeybindFrame.Visible = false
+        end
 
         MainFrame = New("TextButton", {
             BackgroundColor3 = function()
@@ -7478,6 +7480,8 @@ function Library:CreateWindow(WindowInfo)
     --// Window Table \\--
     local Window = {
         ActiveTab = nil,
+        ActiveDialog = nil,
+        Dialogues = {},
         GlobalSearch = WindowInfo.GlobalSearch,
         Registries = {
             Labels = {},
@@ -7491,6 +7495,7 @@ function Library:CreateWindow(WindowInfo)
         TabButtons = {},
         Tabs = {},
         Visible = false,
+        Destroyed = false,
     }
 
     function Window:GetRegistry(Name)
@@ -7553,6 +7558,10 @@ function Library:CreateWindow(WindowInfo)
     end
 
     function Window:SetActive()
+        if Window.Destroyed then
+            return
+        end
+
         Library.ActiveWindow = Window
         if Window.ActiveTab then
             Library.ActiveTab = Window.ActiveTab
@@ -7585,11 +7594,73 @@ function Library:CreateWindow(WindowInfo)
         WindowInfo.Footer = footer
     end
 
+    local WindowToggleButton
+
     function Window:Destroy()
+        if Window.Destroyed then
+            return
+        end
+
         Window:Hide()
+        Window.Destroyed = true
+
+        if WindowToggleButton and WindowToggleButton.Button and WindowToggleButton.Button.Parent then
+            WindowToggleButton.Button:Destroy()
+        end
+        WindowToggleButton = nil
+
+        for _, Dialog in pairs(Window.Dialogues) do
+            if type(Dialog) == "table" and type(Dialog.Destroy) == "function" and not Dialog.Destroyed then
+                Dialog:Destroy()
+            end
+        end
+
+        local tabsToDestroy = {}
+        Window:ForEachTab(function(_, Tab)
+            if type(Tab) == "table" then
+                table.insert(tabsToDestroy, Tab)
+            end
+        end)
+        for _, Tab in ipairs(tabsToDestroy) do
+            if type(Tab.Destroy) == "function" and not Tab.Destroyed then
+                Tab:Destroy()
+            end
+        end
+
         Library:RemoveArrayItem(Library.Windows, Window)
         Window:ClearRegistries()
-        Library:Unload()
+        table.clear(Window.Dialogues)
+
+        if MainFrame and MainFrame.Parent then
+            MainFrame:Destroy()
+        end
+
+        if Library.ActiveWindow == Window then
+            Library.ActiveWindow = nil
+        end
+        if Library.ActiveTab and Library.ActiveTab.Window == Window then
+            Library.ActiveTab = nil
+        end
+        if Library.ActiveDialog and Library.ActiveDialog.Window == Window then
+            Library.ActiveDialog = nil
+        end
+        Window.ActiveDialog = nil
+
+        for index = #Library.Windows, 1, -1 do
+            local Candidate = Library.Windows[index]
+            if type(Candidate) == "table" and not Candidate.Destroyed then
+                if Candidate.Visible then
+                    Candidate:SetActive()
+                    break
+                end
+            end
+        end
+
+        Library.Toggled = Library:IsAnyWindowVisible()
+        if not Library.Toggled then
+            TooltipLabel.Visible = false
+            Library:CloseTransientElements()
+        end
     end
 
     table.insert(Library.Windows, Window)
@@ -9124,8 +9195,8 @@ function Library:CreateWindow(WindowInfo)
         local ButtonsHolder
         local FooterButtonsList = {}
 
-        if Library.ActiveDialog then
-            Library.ActiveDialog:Dismiss()
+        if Window.ActiveDialog then
+            Window.ActiveDialog:Dismiss()
         end
 
         DialogOverlay = New("TextButton", {
@@ -9328,6 +9399,7 @@ function Library:CreateWindow(WindowInfo)
         local Dialog = {
             Elements = {},
             Container = DialogContainer,
+            Window = Window,
         }
 
         function Dialog:Resize()
@@ -9384,7 +9456,12 @@ function Library:CreateWindow(WindowInfo)
             end
 
             Dialog.Destroyed = true
-            Library.ActiveDialog = nil
+            if Window.ActiveDialog == Dialog then
+                Window.ActiveDialog = nil
+            end
+            if Library.ActiveDialog == Dialog then
+                Library.ActiveDialog = nil
+            end
             for buttonIdx in pairs(FooterButtonsList) do
                 Dialog:RemoveFooterButton(buttonIdx)
             end
@@ -9395,6 +9472,7 @@ function Library:CreateWindow(WindowInfo)
             task.delay(Library.TweenInfo.Time, function()
                 DialogOverlay:Destroy()
             end)
+            Window.Dialogues[Idx] = nil
             Library.Dialogues[Idx] = nil
         end
 
@@ -9590,15 +9668,21 @@ function Library:CreateWindow(WindowInfo)
         end
 
         setmetatable(Dialog, BaseGroupbox)
+        Window.Dialogues[Idx] = Dialog
         Library.Dialogues[Idx] = Dialog
 
         Dialog:Resize()
         
+        Window.ActiveDialog = Dialog
         Library.ActiveDialog = Dialog
         return Dialog
     end
 
     function Window:SetVisible(Value: boolean)
+        if Window.Destroyed then
+            return
+        end
+
         Window.Visible = Value
         MainFrame.Visible = Value
 
@@ -9641,6 +9725,10 @@ function Library:CreateWindow(WindowInfo)
     end
 
     function Window:Hide()
+        if Window.Destroyed then
+            return
+        end
+
         Window:SetVisible(false)
 
         if Library.ActiveWindow == Window then
@@ -9649,6 +9737,7 @@ function Library:CreateWindow(WindowInfo)
             Library.LastSearchTab = nil
             Library.Searching = false
             Library.SearchText = ""
+            Library.ActiveDialog = nil
 
             for index = #Library.Windows, 1, -1 do
                 local Candidate = Library.Windows[index]
@@ -9661,6 +9750,10 @@ function Library:CreateWindow(WindowInfo)
     end
 
     function Window:Toggle(Value: boolean?)
+        if Window.Destroyed then
+            return
+        end
+
         if typeof(Value) == "boolean" then
             Window:SetVisible(Value)
         else
@@ -9768,22 +9861,22 @@ function Library:CreateWindow(WindowInfo)
             end)
         end
 
-        local ToggleButton = Library:AddDraggableButton("", function()
+        WindowToggleButton = Library:AddDraggableButton("", function()
             Window:Toggle()
         end, true)
         
-        ToggleButton.Button.Visible = true
-        ToggleButton.Button.Parent = Library.ScreenGui
-        ToggleButton:SetIcon("rbxassetid://86720583626882", ButtonSize)
+        WindowToggleButton.Button.Visible = true
+        WindowToggleButton.Button.Parent = Library.ScreenGui
+        WindowToggleButton:SetIcon("rbxassetid://86720583626882", ButtonSize)
         
-        local IconImage = ToggleButton.Button:FindFirstChildWhichIsA("ImageLabel")
+        local IconImage = WindowToggleButton.Button:FindFirstChildWhichIsA("ImageLabel")
         if IconImage then
             IconImage.ImageColor3 = Color3.new(1, 1, 1)
             IconImage.Size = UDim2.fromScale(0.8, 0.8)
         end
 
-        ToggleButton.Button.AnchorPoint = Vector2.new(0, 1)
-        ToggleButton.Button.Position = UDim2.new(0, 10, 1, -10)
+        WindowToggleButton.Button.AnchorPoint = Vector2.new(0, 1)
+        WindowToggleButton.Button.Position = UDim2.new(0, 10, 1, -10)
     end
 
     --// Execution \\--
