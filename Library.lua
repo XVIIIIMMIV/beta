@@ -5442,7 +5442,7 @@ do
                 return UDim2.new(1, 0, 0, 0)
             end,
             function()
-                return { 0, (Dropdown.Text and 39 or 21) + 1 }
+                return { 0, Holder.AbsoluteSize.Y + 1 }
             end,
             2,
             function(Active: boolean)
