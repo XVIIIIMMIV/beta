@@ -58,6 +58,8 @@ local SaveManager = {} do
     SaveManager.PendingLoadWorker = nil
     SaveManager.AutoSaveDirty = false
     SaveManager._autoSaveTimer = nil
+    SaveManager.DebugEnabled = false
+    SaveManager.DebugScopes = {}
 
     do
         local ok, plr = pcall(function()
@@ -272,6 +274,48 @@ local SaveManager = {} do
         self.Library = library
     end
 
+    function SaveManager:SetDebugEnabled(enabled, scopes)
+        self.DebugEnabled = enabled == true
+        self.DebugScopes = type(scopes) == "table" and table.clone(scopes) or {}
+    end
+
+    function SaveManager:DebugLog(scope, message, ...)
+        if not self.DebugEnabled then
+            return
+        end
+
+        if next(self.DebugScopes) and not self.DebugScopes[scope] then
+            return
+        end
+
+        local formatted = tostring(message or "")
+        local ok, result = pcall(string.format, formatted, ...)
+        if ok then
+            formatted = result
+        end
+
+        warn(string.format("[SaveManager:%s] %s", tostring(scope or "General"), formatted))
+    end
+
+    function SaveManager:GetDiagnostics()
+        local pendingLoadCount = 0
+        for _ in pairs(self.PendingLoads or {}) do
+            pendingLoadCount += 1
+        end
+
+        return {
+            CurrentConfig = self.CurrentConfig,
+            ManualAutoload = self.ManualAutoload,
+            LoadingMetadata = self.LoadingMetadata == true,
+            AutoSaveDirty = self.AutoSaveDirty == true,
+            AutoSaveTimerActive = self._autoSaveTimer ~= nil,
+            PendingLoadCount = pendingLoadCount,
+            Initialized = self.Initialized == true,
+            AutoSaveDebounce = self.AutoSaveDebounce,
+            UseCustomStateAsPrimary = self.UseCustomStateAsPrimary == true,
+        }
+    end
+
     -- Pending Load Queue
     -- Queues a control load until the target control exists.
     function SaveManager:QueuePendingLoad(option)
@@ -280,6 +324,7 @@ local SaveManager = {} do
         end
 
         self.PendingLoads[option.idx] = option
+        self:DebugLog("PendingLoad", "Queued %s (%s)", tostring(option.idx), tostring(option.type))
         self:StartPendingLoadWorker()
     end
 
@@ -302,6 +347,7 @@ local SaveManager = {} do
                 if object then
                     self.PendingLoads[idx] = nil
                     appliedAny = true
+                    self:DebugLog("PendingLoad", "Applying queued %s (%s)", tostring(idx), tostring(optionType))
                     task.spawn(parser.Load, idx, option)
                 end
             end
@@ -465,6 +511,12 @@ local SaveManager = {} do
         if type(options.AutoSaveDebounce) == "number" and options.AutoSaveDebounce >= 0 then
             self.AutoSaveDebounce = options.AutoSaveDebounce
         end
+        if type(options.DebugEnabled) == "boolean" then
+            self.DebugEnabled = options.DebugEnabled
+        end
+        if type(options.DebugScopes) == "table" then
+            self.DebugScopes = table.clone(options.DebugScopes)
+        end
     end
 
     -- Export Ignore
@@ -576,6 +628,8 @@ local SaveManager = {} do
             return false, "failed to write file: " .. tostring(err)
         end
 
+        self:DebugLog("Save", "Saved config %s", tostring(name))
+
         if not silent then
             self.CurrentConfig = name
         end
@@ -678,6 +732,7 @@ local SaveManager = {} do
 
         local success, decoded = pcall(HttpService.JSONDecode, HttpService, readfile(file))
         if not success or type(decoded) ~= "table" then return false, "decode error" end
+        self:DebugLog("Load", "Loading config %s", tostring(name))
 
         if not self.UseCustomStateAsPrimary and type(decoded.objects) == "table" then
             for _, option in pairs(decoded.objects) do
@@ -710,6 +765,7 @@ local SaveManager = {} do
 
         if self.CustomLoad and customPayload then
             task.spawn(self.CustomLoad, customPayload)
+            self:DebugLog("Load", "Custom payload applied for %s", tostring(name))
         end
 
         self:SaveAutoSaveMetadata()
@@ -909,6 +965,7 @@ local SaveManager = {} do
                 return false, autoloadErr
             end
             self:UpdateAutoloadLabel("autosave")
+            self:DebugLog("AutoSave", "Enabled autosave policy")
         else
             self:CancelAutoSaveTimer()
             local deleteSuccess, deleteErr = self:DeleteAutoLoadConfig()
@@ -917,6 +974,7 @@ local SaveManager = {} do
             end
             self.CurrentConfig = nil
             self:UpdateAutoloadLabel("")
+            self:DebugLog("AutoSave", "Disabled autosave policy")
         end
 
         self:SaveAutoSaveMetadata()
@@ -1122,6 +1180,7 @@ local SaveManager = {} do
         local ok, err = self:Save("autosave", true)
         if ok then
             self:SaveAutoSaveMetadata()
+            self:DebugLog("AutoSave", "Flushed autosave")
         end
 
         return ok, err
@@ -1137,6 +1196,7 @@ local SaveManager = {} do
 
         self:CancelAutoSaveTimer(false)
         local debounceDelay = tonumber(self.AutoSaveDebounce) or 1
+        self:DebugLog("AutoSave", "Scheduled autosave in %.2fs", math.max(0, debounceDelay))
         self._autoSaveTimer = task.delay(math.max(0, debounceDelay), function()
             self:FlushAutoSave()
         end)
@@ -1146,6 +1206,7 @@ local SaveManager = {} do
     -- Marks autosave state dirty and queues a flush.
     function SaveManager:MarkAutoSaveDirty()
         self.AutoSaveDirty = true
+        self:DebugLog("AutoSave", "Marked autosave dirty")
         self:ScheduleAutoSave()
     end
 
@@ -1195,6 +1256,7 @@ local SaveManager = {} do
             local success, decoded = pcall(HttpService.JSONDecode, HttpService, readfile(path))
             if success and type(decoded) == "table" then
                 self.LoadingMetadata = true
+                self:DebugLog("Metadata", "Loading autosave metadata")
 
                 -- Restore ManualAutoload field
                 self.ManualAutoload = (decoded.ManualAutoload ~= "" and decoded.ManualAutoload) or nil
@@ -1223,6 +1285,7 @@ local SaveManager = {} do
                 end
 
                 self.LoadingMetadata = false
+                self:DebugLog("Metadata", "Autosave metadata applied")
 
                 -- Sync label with what was actually loaded
                 if self.AutoloadConfigLabel then
