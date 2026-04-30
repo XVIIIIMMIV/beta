@@ -61,6 +61,9 @@ local SaveManager = {} do
     SaveManager.DebugEnabled = false
     SaveManager.DebugScopes = {}
 
+    local BaseIgnore = table.clone(SaveManager.Ignore)
+    local BaseIgnoreExport = table.clone(SaveManager.IgnoreExport)
+
     do
         local ok, plr = pcall(function()
             return game:GetService("Players").LocalPlayer
@@ -464,6 +467,7 @@ local SaveManager = {} do
     -- Ignore Indexes
     -- Replaces the ignored control index list.
     function SaveManager:SetIgnoreIndexes(list)
+        self.Ignore = table.clone(BaseIgnore)
         for _, key in pairs(list) do
             self.Ignore[key] = true
         end
@@ -522,6 +526,7 @@ local SaveManager = {} do
     -- Export Ignore
     -- Replaces the index list excluded from export.
     function SaveManager:SetIgnoreExportIndexes(list)
+        self.IgnoreExport = table.clone(BaseIgnoreExport)
         for _, key in pairs(list) do
             self.IgnoreExport[key] = true
         end
