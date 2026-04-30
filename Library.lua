@@ -5060,10 +5060,7 @@ do
 
         function Dropdown:SetVisible(Visible: boolean)
             Dropdown.Visible = Visible
-
-            Holder.Visible = Dropdown.Visible
-            Groupbox:Resize()
-            task.defer(function() Groupbox:Resize() end)
+            Library:RefreshElementLayout(Groupbox, Holder, Dropdown.Visible)
         end
 
         function Dropdown:SetText(Text: string)
