@@ -57,6 +57,12 @@ local Library = {
     KeybindFrame = nil,
     KeybindContainer = nil,
     KeybindToggles = {},
+    SharedUI = {
+        ScreenGui = nil,
+        ModalElement = nil,
+        Cursor = nil,
+        CursorCustomImage = nil,
+    },
 
     Notifications = {},
     Dialogues = {},
@@ -1521,6 +1527,7 @@ local ScreenGui = New("ScreenGui", {
 })
 ParentUI(ScreenGui)
 Library.ScreenGui = ScreenGui
+Library.SharedUI.ScreenGui = ScreenGui
 ScreenGui.DescendantRemoving:Connect(function(Instance)
     Library:RemoveFromRegistry(Instance)
 end)
@@ -1534,6 +1541,7 @@ local ModalElement = New("TextButton", {
     ZIndex = -999,
     Parent = ScreenGui,
 })
+Library.SharedUI.ModalElement = ModalElement
 
 --// Cursor
 local Cursor, CursorCustomImage
@@ -1581,6 +1589,8 @@ do
         Visible = false,
         Parent = Cursor
     })
+    Library.SharedUI.Cursor = Cursor
+    Library.SharedUI.CursorCustomImage = CursorCustomImage
 end
 
 --// Notification
@@ -1611,6 +1621,11 @@ end
 
 --// Lib Functions \\--
 function Library:ResetCursorIcon()
+    local CursorCustomImage = Library:GetCursorCustomImage()
+    if not CursorCustomImage then
+        return
+    end
+
     CursorCustomImage.Visible = false
     CursorCustomImage.Size = UDim2.fromOffset(20, 20)
 end
@@ -1624,6 +1639,11 @@ function Library:ChangeCursorIcon(ImageId: string)
     local Icon = Library:GetCustomIcon(ImageId)
     assert(Icon, "Image must be a valid Roblox asset or a valid URL or a valid lucide icon.")
 
+    local CursorCustomImage = Library:GetCursorCustomImage()
+    if not CursorCustomImage then
+        return
+    end
+
     CursorCustomImage.Visible = true
     CursorCustomImage.Image = Icon.Url
     CursorCustomImage.ImageRectOffset = Icon.ImageRectOffset
@@ -1632,7 +1652,10 @@ end
 
 function Library:ChangeCursorIconSize(Size: UDim2)
     assert(typeof(Size) == "UDim2", "UDim2 expected.")
-    CursorCustomImage.Size = Size
+    local CursorCustomImage = Library:GetCursorCustomImage()
+    if CursorCustomImage then
+        CursorCustomImage.Size = Size
+    end
 end
 
 function Library:GetBetterColor(Color: Color3, Add: number): Color3
@@ -2093,6 +2116,35 @@ function Library:RefreshSearch(Context)
     else
         Library:UpdateSearch(SearchText)
     end
+end
+
+function Library:GetContextTab(Context)
+    if type(Context) ~= "table" then
+        local Window = Library:GetContextWindow(nil)
+        return Window and Window.ActiveTab or Library.ActiveTab
+    end
+
+    return Context.Tab
+        or Context.Groupbox and Context.Groupbox.Tab
+        or Context.Window and Context.Window.ActiveTab
+        or Library:GetContextWindow(Context) and Library:GetContextWindow(Context).ActiveTab
+        or Library.ActiveTab
+end
+
+function Library:GetScreenGui()
+    return (Library.SharedUI and Library.SharedUI.ScreenGui) or Library.ScreenGui
+end
+
+function Library:GetModalElement()
+    return Library.SharedUI and Library.SharedUI.ModalElement
+end
+
+function Library:GetCursor()
+    return Library.SharedUI and Library.SharedUI.Cursor
+end
+
+function Library:GetCursorCustomImage()
+    return Library.SharedUI and Library.SharedUI.CursorCustomImage
 end
 
 function Library:IsAnyWindowVisible()
@@ -2896,6 +2948,12 @@ function Library:Unload()
     Library.KeybindFrame = nil
     Library.KeybindContainer = nil
     Library.ScreenGui = nil
+    if Library.SharedUI then
+        Library.SharedUI.ScreenGui = nil
+        Library.SharedUI.ModalElement = nil
+        Library.SharedUI.Cursor = nil
+        Library.SharedUI.CursorCustomImage = nil
+    end
 
     if Library.OnObjectChanged then
         pcall(function()
@@ -5083,7 +5141,7 @@ do
                 return
             end
 
-            local Tab = Library.ActiveTab
+            local Tab = Library:GetContextTab(Slider)
             local DragChanged = false
             local function ApplyMouseValue()
                 local OldValue = Slider.Value
@@ -5864,7 +5922,7 @@ do
                 return
             end
 
-            local Tab = Groupbox.Tab or Library.ActiveTab
+            local Tab = Library:GetContextTab(Groupbox)
             if Tab and Tab.Sides then
                 for _, Side in Tab.Sides do
                     Side.ScrollingEnabled = false
@@ -5877,7 +5935,7 @@ do
                 return
             end
 
-            local Tab = Groupbox.Tab or Library.ActiveTab
+            local Tab = Library:GetContextTab(Groupbox)
             if Tab and Tab.Sides then
                 for _, Side in Tab.Sides do
                     Side.ScrollingEnabled = true
@@ -9712,6 +9770,8 @@ function Library:CreateWindow(WindowInfo)
             return
         end
 
+        local ModalElement = Library:GetModalElement()
+        local Cursor = Library:GetCursor()
         Window.Visible = Value
         MainFrame.Visible = Value
 
@@ -9721,7 +9781,7 @@ function Library:CreateWindow(WindowInfo)
 
         Library.Toggled = Library:IsAnyWindowVisible()
 
-        if WindowInfo.UnlockMouseWhileOpen then
+        if WindowInfo.UnlockMouseWhileOpen and ModalElement then
             ModalElement.Modal = Value
         end
 
@@ -9733,12 +9793,16 @@ function Library:CreateWindow(WindowInfo)
             RunService:BindToRenderStep("ShowCursor", Enum.RenderPriority.Last.Value, function()
                 UserInputService.MouseIconEnabled = not Library.ShowCustomCursor
 
-                Cursor.Position = UDim2.fromOffset(Mouse.X, Mouse.Y)
-                Cursor.Visible = Library.ShowCustomCursor
+                if Cursor then
+                    Cursor.Position = UDim2.fromOffset(Mouse.X, Mouse.Y)
+                    Cursor.Visible = Library.ShowCustomCursor
+                end
 
                 if not (Library.Toggled and ScreenGui and ScreenGui.Parent) then
                     UserInputService.MouseIconEnabled = OldMouseIconEnabled
-                    Cursor.Visible = false
+                    if Cursor then
+                        Cursor.Visible = false
+                    end
                     RunService:UnbindFromRenderStep("ShowCursor")
                 end
             end)
