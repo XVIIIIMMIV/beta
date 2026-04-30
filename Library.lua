@@ -5343,9 +5343,11 @@ do
 
         local MenuTable
 
+        local hasInitialLabel = type(Dropdown.Text) == "string" and Dropdown.Text ~= ""
+
         local Holder = New("Frame", {
             BackgroundTransparency = 1,
-            Size = UDim2.new(1, 0, 0, Dropdown.Text and 39 or 21),
+            Size = UDim2.new(1, 0, 0, hasInitialLabel and 39 or 21),
             Visible = Dropdown.Visible,
             Parent = Container,
         })
@@ -5356,7 +5358,7 @@ do
             Text = Dropdown.Text,
             TextSize = 14,
             TextXAlignment = Enum.TextXAlignment.Left,
-            Visible = not not Info.Text,
+            Visible = hasInitialLabel,
             ZIndex = 3,
             Parent = Holder,
         })
@@ -5472,6 +5474,14 @@ do
             Label.TextTransparency = Dropdown.Disabled and 0.8 or 0
             Display.TextTransparency = Dropdown.Disabled and 0.8 or 0
             ArrowImage.ImageTransparency = Dropdown.Disabled and 0.8 or MenuTable.Active and 0 or 0.5
+        end
+
+        function Dropdown:RefreshLayout()
+            local hasLabel = type(Dropdown.Text) == "string" and Dropdown.Text ~= ""
+            Holder.Size = UDim2.new(1, 0, 0, hasLabel and 39 or 21)
+            Label.Text = hasLabel and Dropdown.Text or ""
+            Label.Visible = hasLabel
+            Library:RefreshElementLayout(Groupbox, Holder, Dropdown.Visible)
         end
 
         function Dropdown:Display()
@@ -5882,11 +5892,7 @@ do
 
         function Dropdown:SetText(Text: string)
             Dropdown.Text = Text
-            local hasLabel = type(Text) == "string" and Text ~= ""
-            Holder.Size = UDim2.new(1, 0, 0, hasLabel and 39 or 21)
-
-            Label.Text = hasLabel and Text or ""
-            Label.Visible = hasLabel
+            Dropdown:RefreshLayout()
         end
 
         Display.MouseButton1Click:Connect(function()
@@ -5942,7 +5948,7 @@ do
         Dropdown:Display()
         Dropdown:BuildDropdownList()
         TryApplyPendingValue()
-        Groupbox:Resize()
+        Dropdown:RefreshLayout()
 
         Dropdown.Holder = Holder
         Dropdown.Groupbox = Groupbox
