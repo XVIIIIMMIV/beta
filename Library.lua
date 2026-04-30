@@ -60,8 +60,6 @@ local Library = {
     SharedUI = {
         ScreenGui = nil,
         ModalElement = nil,
-        Cursor = nil,
-        CursorCustomImage = nil,
     },
 
     Notifications = {},
@@ -89,7 +87,6 @@ local Library = {
     },
 
     NotifySide = "Right",
-    ShowCustomCursor = true,
     ForceCheckbox = false,
     ShowToggleFrameInKeybinds = true,
     CollapsibleStartCollapsed = true,
@@ -227,7 +224,6 @@ local Templates = {
         GlobalSearch = false,
         CornerRadius = 4,
         NotifySide = "Right",
-        ShowCustomCursor = false,
         Font = Enum.Font.RobotoMono,
         ToggleKeybind = Enum.KeyCode.RightControl,
         MobileButtonsSide = "Left",
@@ -1543,56 +1539,6 @@ local ModalElement = New("TextButton", {
 })
 Library.SharedUI.ModalElement = ModalElement
 
---// Cursor
-local Cursor, CursorCustomImage
-do
-    Cursor = New("Frame", {
-        AnchorPoint = Vector2.new(0.5, 0.5),
-        BackgroundColor3 = "WhiteColor",
-        Size = UDim2.fromOffset(9, 1),
-        Visible = false,
-        ZIndex = 11000,
-        Parent = ScreenGui,
-    })
-    New("Frame", {
-        AnchorPoint = Vector2.new(0.5, 0.5),
-        BackgroundColor3 = "DarkColor",
-        Position = UDim2.fromScale(0.5, 0.5),
-        Size = UDim2.new(1, 2, 1, 2),
-        ZIndex = 10999,
-        Parent = Cursor,
-    })
-
-    local CursorV = New("Frame", {
-        AnchorPoint = Vector2.new(0.5, 0.5),
-        BackgroundColor3 = "WhiteColor",
-        Position = UDim2.fromScale(0.5, 0.5),
-        Size = UDim2.fromOffset(1, 9),
-        ZIndex = 11000,
-        Parent = Cursor,
-    })
-    New("Frame", {
-        AnchorPoint = Vector2.new(0.5, 0.5),
-        BackgroundColor3 = "DarkColor",
-        Position = UDim2.fromScale(0.5, 0.5),
-        Size = UDim2.new(1, 2, 1, 2),
-        ZIndex = 10999,
-        Parent = CursorV,
-    })
-
-    CursorCustomImage = New("ImageLabel", {
-        AnchorPoint = Vector2.new(0.5, 0.5),
-        BackgroundTransparency = 1,
-        Position = UDim2.fromScale(0.5, 0.5),
-        Size = UDim2.fromOffset(20, 20),
-        ZIndex = 11000,
-        Visible = false,
-        Parent = Cursor
-    })
-    Library.SharedUI.Cursor = Cursor
-    Library.SharedUI.CursorCustomImage = CursorCustomImage
-end
-
 --// Notification
 local NotificationArea
 local NotificationList
@@ -1617,45 +1563,6 @@ do
         Padding = UDim.new(0, 8),
         Parent = NotificationArea,
     })
-end
-
---// Lib Functions \\--
-function Library:ResetCursorIcon()
-    local CursorCustomImage = Library:GetCursorCustomImage()
-    if not CursorCustomImage then
-        return
-    end
-
-    CursorCustomImage.Visible = false
-    CursorCustomImage.Size = UDim2.fromOffset(20, 20)
-end
-
-function Library:ChangeCursorIcon(ImageId: string)
-    if not ImageId or ImageId == "" then
-        Library:ResetCursorIcon()
-        return
-    end
-
-    local Icon = Library:GetCustomIcon(ImageId)
-    assert(Icon, "Image must be a valid Roblox asset or a valid URL or a valid lucide icon.")
-
-    local CursorCustomImage = Library:GetCursorCustomImage()
-    if not CursorCustomImage then
-        return
-    end
-
-    CursorCustomImage.Visible = true
-    CursorCustomImage.Image = Icon.Url
-    CursorCustomImage.ImageRectOffset = Icon.ImageRectOffset
-    CursorCustomImage.ImageRectSize = Icon.ImageRectSize
-end
-
-function Library:ChangeCursorIconSize(Size: UDim2)
-    assert(typeof(Size) == "UDim2", "UDim2 expected.")
-    local CursorCustomImage = Library:GetCursorCustomImage()
-    if CursorCustomImage then
-        CursorCustomImage.Size = Size
-    end
 end
 
 function Library:GetBetterColor(Color: Color3, Add: number): Color3
@@ -2133,14 +2040,6 @@ end
 
 function Library:GetModalElement()
     return Library.SharedUI and Library.SharedUI.ModalElement
-end
-
-function Library:GetCursor()
-    return Library.SharedUI and Library.SharedUI.Cursor
-end
-
-function Library:GetCursorCustomImage()
-    return Library.SharedUI and Library.SharedUI.CursorCustomImage
 end
 
 function Library:IsAnyWindowVisible()
@@ -2792,8 +2691,8 @@ function Library:AddTooltip(InfoStr: string, DisabledInfoStr: string, HoverInsta
             and not (CurrentMenu and Library:MouseIsOverFrame(CurrentMenu.Menu, Mouse))
         do
             TooltipLabel.Position = UDim2.fromOffset(
-                Mouse.X + (Library.ShowCustomCursor and 8 or 14),
-                Mouse.Y + (Library.ShowCustomCursor and 8 or 12)
+                Mouse.X + 14,
+                Mouse.Y + 12
             )
 
             RunService.RenderStepped:Wait()
@@ -2950,8 +2849,6 @@ function Library:Unload()
     if Library.SharedUI then
         Library.SharedUI.ScreenGui = nil
         Library.SharedUI.ModalElement = nil
-        Library.SharedUI.Cursor = nil
-        Library.SharedUI.CursorCustomImage = nil
     end
 
     if Library.OnObjectChanged then
@@ -7174,7 +7071,6 @@ function Library:CreateWindow(WindowInfo)
 
     Library.CornerRadius = WindowInfo.CornerRadius
     Library:SetNotifySide(WindowInfo.NotifySide)
-    Library.ShowCustomCursor = WindowInfo.ShowCustomCursor
     Library.Scheme.Font = WindowInfo.Font
     if Library.ToggleKeybind == nil then
         Library.ToggleKeybind = WindowInfo.ToggleKeybind
@@ -9770,7 +9666,6 @@ function Library:CreateWindow(WindowInfo)
         end
 
         local ModalElement = Library:GetModalElement()
-        local Cursor = Library:GetCursor()
         Window.Visible = Value
         MainFrame.Visible = Value
 
@@ -9784,28 +9679,7 @@ function Library:CreateWindow(WindowInfo)
             ModalElement.Modal = Value
         end
 
-        if Library.Toggled and not Library.IsMobile then
-            local OldMouseIconEnabled = UserInputService.MouseIconEnabled
-            pcall(function()
-                RunService:UnbindFromRenderStep("ShowCursor")
-            end)
-            RunService:BindToRenderStep("ShowCursor", Enum.RenderPriority.Last.Value, function()
-                UserInputService.MouseIconEnabled = not Library.ShowCustomCursor
-
-                if Cursor then
-                    Cursor.Position = UDim2.fromOffset(Mouse.X, Mouse.Y)
-                    Cursor.Visible = Library.ShowCustomCursor
-                end
-
-                if not (Library.Toggled and ScreenGui and ScreenGui.Parent) then
-                    UserInputService.MouseIconEnabled = OldMouseIconEnabled
-                    if Cursor then
-                        Cursor.Visible = false
-                    end
-                    RunService:UnbindFromRenderStep("ShowCursor")
-                end
-            end)
-        elseif not Library.Toggled then
+        if not Library.Toggled then
             TooltipLabel.Visible = false
 
             Library:CloseTransientElements()
