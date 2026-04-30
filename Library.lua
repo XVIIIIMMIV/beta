@@ -2131,10 +2131,6 @@ function Library:GetContextTab(Context)
         or Library.ActiveTab
 end
 
-function Library:GetScreenGui()
-    return (Library.SharedUI and Library.SharedUI.ScreenGui) or Library.ScreenGui
-end
-
 function Library:GetModalElement()
     return Library.SharedUI and Library.SharedUI.ModalElement
 end
@@ -2911,11 +2907,14 @@ function Library:Unload()
     end
     table.clear(Tooltips)
 
-    if Library.ScreenGui then
+    local screenGui = Library.ScreenGui
+    if screenGui then
         pcall(function()
-            Library.ScreenGui.Enabled = false
+            screenGui.Enabled = false
             task.delay(0.1, function()
-                Library.ScreenGui:Destroy()
+                if screenGui and screenGui.Parent then
+                    screenGui:Destroy()
+                end
             end)
         end)
     end
