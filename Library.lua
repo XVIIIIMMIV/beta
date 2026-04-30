@@ -5,7 +5,6 @@ local CoreGui: CoreGui = cloneref(game:GetService("CoreGui"))
 local Players: Players = cloneref(game:GetService("Players"))
 local RunService: RunService = cloneref(game:GetService("RunService"))
 local SoundService: SoundService = cloneref(game:GetService("SoundService"))
-local TeleportService: TeleportService = cloneref(game:GetService("TeleportService"))
 local UserInputService: UserInputService = cloneref(game:GetService("UserInputService"))
 local TextService: TextService = cloneref(game:GetService("TextService"))
 local Teams: Teams = cloneref(game:GetService("Teams"))
@@ -105,23 +104,12 @@ local Library = {
         ClickHold = 0.15,
         DisableExistingIdled = true,
     },
-    AutoReconnectState = {
-        Running = false,
-        LastReconnect = 0,
-        Cooldown = 8,
-        Connections = {},
-        Loop = nil,
-        ResolvePlaceId = nil,
-        Logger = nil,
-        PromptInterval = 1.5,
-    },
     PauseBypassState = {
         Running = false,
         Connections = {},
         Loop = nil,
         Interval = 2,
     },
-
     OnObjectChanged = Instance.new("BindableEvent"),
 
     OriginalMinSize = Vector2.new(480, 360),
@@ -1087,33 +1075,6 @@ local function StopUtilityState(State)
     end
 end
 
-local function GetReconnectPromptMessage()
-    local success, result = pcall(function()
-        local promptGui = CoreGui:FindFirstChild("RobloxPromptGui")
-        local overlay = promptGui and promptGui:FindFirstChild("promptOverlay")
-        if not overlay then
-            return nil
-        end
-
-        for _, child in ipairs(overlay:GetDescendants()) do
-            if child:IsA("Frame") and child.Visible then
-                for _, label in ipairs(child:GetDescendants()) do
-                    if label:IsA("TextLabel") and label.Text ~= "" then
-                        local message = label.Text:lower()
-                        if message:find("error") or message:find("disconnect") or message:find("kick") or message:find("lost") or message:find("connection") then
-                            return label.Text
-                        end
-                    end
-                end
-            end
-        end
-
-        return nil
-    end)
-
-    return if success then result else nil
-end
-
 -- Utility Log
 -- Writes lightweight utility diagnostics without using UI notifications.
 function Library:UtilityLog(Kind, Message)
@@ -1204,126 +1165,6 @@ function Library:StartAntiAFK(Config)
             VirtualUser:Button2Up(Vector2.new(0, 0), camera.CFrame)
         end)
     end))
-
-    return true
-end
-
--- AutoReconnect Stop
--- Stops reconnect watchers and prompt polling.
-function Library:StopAutoReconnect()
-    StopUtilityState(Library.AutoReconnectState)
-end
-
--- AutoReconnect Now
--- Reconnects immediately through executor or teleport fallback.
-function Library:ReconnectNow(Reason, PlaceId)
-    local state = Library.AutoReconnectState
-    if Library.Unloaded then
-        return false
-    end
-
-    local now = os.clock()
-    if (now - state.LastReconnect) < state.Cooldown then
-        return false
-    end
-
-    state.LastReconnect = now
-    pcall(state.Logger or warn, Reason)
-
-    if typeof(reconnect) == "function" then
-        pcall(reconnect)
-        return true
-    end
-
-    local resolvedPlaceId = tonumber(PlaceId) or game.PlaceId
-    if type(state.ResolvePlaceId) == "function" then
-        local ok, customPlaceId = pcall(state.ResolvePlaceId)
-        if ok and tonumber(customPlaceId) then
-            resolvedPlaceId = tonumber(customPlaceId)
-        end
-    end
-
-    pcall(function()
-        TeleportService:Teleport(resolvedPlaceId, LocalPlayer)
-    end)
-
-    return true
-end
-
--- AutoReconnect Start
--- Watches disconnect surfaces and reconnects automatically.
-function Library:StartAutoReconnect(Config)
-    local state = Library.AutoReconnectState
-    if Library.Unloaded then
-        return false
-    end
-
-    Library:StopAutoReconnect()
-
-    Config = type(Config) == "table" and Config or {}
-    state.Running = true
-    state.Cooldown = math.max(tonumber(Config.Cooldown) or state.Cooldown or 8, 1)
-    state.ResolvePlaceId = type(Config.ResolvePlaceId) == "function" and Config.ResolvePlaceId or nil
-    state.Logger = type(Config.Logger) == "function"
-        and Config.Logger
-        or function(reason)
-            Library:UtilityLog("AutoReconnect", "Reconnecting... Reason: " .. tostring(reason))
-        end
-    state.PromptInterval = math.max(tonumber(Config.PromptInterval) or state.PromptInterval or 1.5, 0.25)
-    state.LastReconnect = 0
-
-    TrackUtilityConnection(state, LocalPlayer.AncestryChanged:Connect(function(_, parent)
-        if parent == nil and IsUtilityActive(state) then
-            task.delay(1, function()
-                if IsUtilityActive(state) then
-                    Library:ReconnectNow("Player removed (kick/ban/shutdown)")
-                end
-            end)
-        end
-    end))
-
-    TrackUtilityConnection(state, workspace.AncestryChanged:Connect(function(_, parent)
-        if parent == nil and IsUtilityActive(state) then
-            Library:ReconnectNow("Server shutdown")
-        end
-    end))
-
-    TrackUtilityConnection(state, GuiService.ErrorMessageChanged:Connect(function()
-        if not IsUtilityActive(state) then
-            return
-        end
-
-        local message = ""
-        pcall(function()
-            message = GuiService:GetErrorMessage()
-        end)
-
-        if message and message ~= "" then
-            task.delay(2, function()
-                if IsUtilityActive(state) then
-                    Library:ReconnectNow("Network error: " .. message)
-                end
-            end)
-        end
-    end))
-
-    state.Loop = task.spawn(function()
-        while IsUtilityActive(state) do
-            task.wait(state.PromptInterval)
-            if not IsUtilityActive(state) then
-                break
-            end
-
-            local message = nil
-            pcall(function()
-                message = GetReconnectPromptMessage()
-            end)
-
-            if message then
-                Library:ReconnectNow("ErrorPrompt visible: " .. message:sub(1, 60))
-            end
-        end
-    end)
 
     return true
 end
@@ -2954,7 +2795,6 @@ end
 
 Library:OnUnload(function()
     Library:StopAntiAFK()
-    Library:StopAutoReconnect()
     Library:StopPauseBypass()
 end)
 
