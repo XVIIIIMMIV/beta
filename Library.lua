@@ -7390,6 +7390,7 @@ function Library:CreateWindow(WindowInfo)
             TextSize = 14,
             TextXAlignment = Enum.TextXAlignment.Left,
             TextTransparency = 0.5,
+            Visible = false,
             Parent = CurrentTabInfo,
         })
 
@@ -7856,7 +7857,7 @@ function Library:CreateWindow(WindowInfo)
 
     function Window:ShowTabInfo(Name, Description)
         CurrentTabLabel.Text = Name
-        CurrentTabDescription.Text = Description
+        CurrentTabDescription.Text = ""
 
         if IsDefaultSearchbarSize then
             SearchBox.Size = UDim2.fromScale(0.5, 1)
