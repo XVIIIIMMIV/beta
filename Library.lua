@@ -172,12 +172,14 @@ local Templates = {
         BorderSizePixel = 0,
     },
     TextLabel = {
+        AutoLocalize = false,
         BorderSizePixel = 0,
         FontFace = "Font",
         RichText = true,
         TextColor3 = "FontColor",
     },
     TextButton = {
+        AutoLocalize = false,
         AutoButtonColor = false,
         BorderSizePixel = 0,
         FontFace = "Font",
@@ -185,6 +187,7 @@ local Templates = {
         TextColor3 = "FontColor",
     },
     TextBox = {
+        AutoLocalize = false,
         BorderSizePixel = 0,
         FontFace = "Font",
         PlaceholderColor3 = function()
