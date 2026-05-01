@@ -7345,7 +7345,7 @@ function Library:CreateWindow(WindowInfo)
         })
 
         CurrentTabInfo = New("Frame", {
-            Size = UDim2.fromScale(WindowInfo.DisableSearch and 1 or 0.58, 1),
+            Size = UDim2.fromScale(WindowInfo.DisableSearch and 1 or 0.54, 1),
             Visible = false,
             BackgroundTransparency = 1,
             Parent = RightWrapper,
@@ -7860,7 +7860,7 @@ function Library:CreateWindow(WindowInfo)
         CurrentTabDescription.Text = ""
 
         if IsDefaultSearchbarSize then
-            SearchBox.Size = UDim2.fromScale(0.42, 1)
+            SearchBox.Size = UDim2.fromScale(0.46, 1)
         end
         CurrentTabInfo.Visible = true
     end
