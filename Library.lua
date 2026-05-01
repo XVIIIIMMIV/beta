@@ -7877,6 +7877,8 @@ function Library:CreateWindow(WindowInfo)
         local TabButton: TextButton
         local TabLabel
         local TabIcon
+        local TabIndicator
+        local TabIndicator
 
         local TabContainer
         local TabLeft
@@ -7925,10 +7927,21 @@ function Library:CreateWindow(WindowInfo)
                 })
             end
 
+            TabIndicator = New("Frame", {
+                AnchorPoint = Vector2.new(0.5, 1),
+                BackgroundColor3 = "AccentColor",
+                BackgroundTransparency = 1,
+                BorderSizePixel = 0,
+                Position = UDim2.new(0.5, 0, 1, 0),
+                Size = UDim2.new(0.6, 0, 0, 2),
+                Parent = TabButton,
+            })
+
             local TabButtonData = {
                 Label = TabLabel,
                 Padding = ButtonPadding,
                 Icon = TabIcon,
+                Indicator = TabIndicator,
             }
             table.insert(Library.TabButtons, TabButtonData)
             table.insert(Window.TabButtons, TabButtonData)
@@ -8481,6 +8494,16 @@ function Library:CreateWindow(WindowInfo)
                     Parent = TabboxButtons,
                 })
 
+                local Indicator = New("Frame", {
+                    AnchorPoint = Vector2.new(0.5, 1),
+                    BackgroundColor3 = "AccentColor",
+                    BackgroundTransparency = 1,
+                    BorderSizePixel = 0,
+                    Position = UDim2.new(0.5, 0, 1, 0),
+                    Size = UDim2.new(0.6, 0, 0, 2),
+                    Parent = Button,
+                })
+
                 table.insert(
                     Library.Corners,
                     New("UICorner", {
@@ -8596,6 +8619,7 @@ function Library:CreateWindow(WindowInfo)
                         LeftCover = LeftCover,
                         RightCover = RightCover
                     },
+                    Indicator = Indicator,
 
                     Tab = Tab,
                     Elements = {},
@@ -8616,6 +8640,9 @@ function Library:CreateWindow(WindowInfo)
                     if ButtonIcon then
                         ButtonIcon.ImageTransparency = 0
                     end
+                    TweenService:Create(Indicator, Library.TweenInfo, {
+                        BackgroundTransparency = 0,
+                    }):Play()
                     Line.Visible = false
 
                     Tabbox.ActiveTab = Tab
@@ -8642,6 +8669,9 @@ function Library:CreateWindow(WindowInfo)
                     if ButtonIcon then
                         ButtonIcon.ImageTransparency = 0.5
                     end
+                    TweenService:Create(Indicator, Library.TweenInfo, {
+                        BackgroundTransparency = 1,
+                    }):Play()
                     Line.Visible = true
                     Container.Visible = false
                     --// Removed TabboxHolder immediately resize to prevent layout jumping/flickering
@@ -8879,6 +8909,9 @@ function Library:CreateWindow(WindowInfo)
                     ImageTransparency = 0,
                 }):Play()
             end
+            TweenService:Create(TabIndicator, Library.TweenInfo, {
+                BackgroundTransparency = 0,
+            }):Play()
 
             if Description then
                 Window:ShowTabInfo(Name, Description)
@@ -8907,6 +8940,9 @@ function Library:CreateWindow(WindowInfo)
                     ImageTransparency = 0.5,
                 }):Play()
             end
+            TweenService:Create(TabIndicator, Library.TweenInfo, {
+                BackgroundTransparency = 1,
+            }):Play()
             TabContainer.Visible = false
 
             Window:HideTabInfo()
@@ -9042,10 +9078,21 @@ function Library:CreateWindow(WindowInfo)
                 })
             end
 
+            TabIndicator = New("Frame", {
+                AnchorPoint = Vector2.new(0.5, 1),
+                BackgroundColor3 = "AccentColor",
+                BackgroundTransparency = 1,
+                BorderSizePixel = 0,
+                Position = UDim2.new(0.5, 0, 1, 0),
+                Size = UDim2.new(0.6, 0, 0, 2),
+                Parent = TabButton,
+            })
+
             local TabButtonData = {
                 Label = TabLabel,
                 Padding = ButtonPadding,
                 Icon = TabIcon,
+                Indicator = TabIndicator,
             }
             table.insert(Library.TabButtons, TabButtonData)
 
@@ -9182,6 +9229,9 @@ function Library:CreateWindow(WindowInfo)
                     ImageTransparency = 0,
                 }):Play()
             end
+            TweenService:Create(TabIndicator, Library.TweenInfo, {
+                BackgroundTransparency = 0,
+            }):Play()
             TabContainer.Visible = true
 
             if Description then
@@ -9210,6 +9260,9 @@ function Library:CreateWindow(WindowInfo)
                     ImageTransparency = 0.5,
                 }):Play()
             end
+            TweenService:Create(TabIndicator, Library.TweenInfo, {
+                BackgroundTransparency = 1,
+            }):Play()
             TabContainer.Visible = false
 
             Window:HideTabInfo()
