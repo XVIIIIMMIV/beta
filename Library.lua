@@ -124,6 +124,7 @@ local Library = {
         AccentColor = Color3.fromHex("ffffff"),
         ToggleColor = Color3.fromHex("ffff00"),
         SliderColor = Color3.fromHex("ffff00"),
+        TabIndicatorColor = Color3.fromHex("ffff00"),
         OutlineColor = Color3.fromRGB(40, 40, 40),
         FontColor = Color3.new(1, 1, 1),
         Font = Font.fromEnum(Enum.Font.Code),
@@ -7929,7 +7930,7 @@ function Library:CreateWindow(WindowInfo)
 
             TabIndicator = New("Frame", {
                 AnchorPoint = Vector2.new(0.5, 1),
-                BackgroundColor3 = "AccentColor",
+                BackgroundColor3 = "TabIndicatorColor",
                 BackgroundTransparency = 1,
                 BorderSizePixel = 0,
                 Position = UDim2.new(0.5, 0, 1, 0),
@@ -8496,7 +8497,7 @@ function Library:CreateWindow(WindowInfo)
 
                 local Indicator = New("Frame", {
                     AnchorPoint = Vector2.new(0.5, 1),
-                    BackgroundColor3 = "AccentColor",
+                    BackgroundColor3 = "TabIndicatorColor",
                     BackgroundTransparency = 1,
                     BorderSizePixel = 0,
                     Position = UDim2.new(0.5, 0, 1, 0),
@@ -9080,7 +9081,7 @@ function Library:CreateWindow(WindowInfo)
 
             TabIndicator = New("Frame", {
                 AnchorPoint = Vector2.new(0.5, 1),
-                BackgroundColor3 = "AccentColor",
+                BackgroundColor3 = "TabIndicatorColor",
                 BackgroundTransparency = 1,
                 BorderSizePixel = 0,
                 Position = UDim2.new(0.5, 0, 1, 0),
