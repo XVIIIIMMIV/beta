@@ -8909,9 +8909,7 @@ function Library:CreateWindow(WindowInfo)
                     ImageTransparency = 0,
                 }):Play()
             end
-            if Description then
-                Window:ShowTabInfo(Name, Description)
-            end
+            Window:ShowTabInfo(Name, Description)
 
             TabContainer.Visible = true
             Tab:RefreshSides()
@@ -9213,9 +9211,7 @@ function Library:CreateWindow(WindowInfo)
             end
             TabContainer.Visible = true
 
-            if Description then
-                Window:ShowTabInfo(Name, Description)
-            end
+            Window:ShowTabInfo(Name, Description)
 
             Tab:RefreshSides()
 
