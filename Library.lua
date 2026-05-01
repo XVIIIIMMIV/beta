@@ -10196,7 +10196,7 @@ function Library:BuildConfigPanel(settingsTab, saveManager, options)
     assert(type(saveManager) == "table", "saveManager must be a table")
 
     local panelOptions = type(options) == "table" and options or {}
-    local boxName = panelOptions.Name or "Configuration"
+    local boxName = panelOptions.Name or "Settings"
     local boxIcon = panelOptions.Icon or "settings"
     local tabName = panelOptions.TabName or ""
     local tabIcon = panelOptions.TabIcon or "save"
